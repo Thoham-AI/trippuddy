@@ -15,7 +15,7 @@ export default function DestinationsPage() {
           <div className="bg-white rounded-xl shadow-lg p-6 text-center">
             <div className="text-4xl mb-4">🌍</div>
             <h2 className="text-2xl font-bold text-gray-800 mb-2">Destinations Coming Soon!</h2>
-            <p className="text-gray-600">We're preparing amazing travel destinations for you</p>
+            <p className="text-gray-600">We';re preparing amazing travel destinations for you</p>
           </div>
         </div>
       </div>

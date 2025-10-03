@@ -1,33 +1,25 @@
+"use client";
+import Image from "next/image";
+
 export default function DestinationCard({ destination }) {
+  const { name, description, image } = destination;
+
+  // fallback ảnh mặc định nếu không có ảnh từ Unsplash
+  const fallbackImage = "/images/placeholder.jpg"; // đặt sẵn 1 ảnh trong public/images/
+
   return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: 12,
-        overflow: "hidden",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-        textAlign: "center",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <img
-        src={destination.image}
-        alt={destination.name}
-        style={{
-          width: "100%",
-          height: 140,         // fixed height
-          objectFit: "cover",  // crops nicely
-        }}
-      />
-      <div style={{ padding: "12px" }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
-          {destination.name}
-        </h2>
-        <p style={{ fontSize: 14, color: "#555" }}>
-          {destination.description || "Discover this amazing place..."}
-        </p>
+    <div className="bg-white rounded-2xl shadow-md p-4 flex flex-col items-center justify-between w-64">
+      <div className="w-full h-40 relative mb-4">
+        <Image
+          src={image || fallbackImage}
+          alt={name}
+          fill
+          className="object-cover rounded-xl"
+          sizes="(max-width: 768px) 100vw, 300px"
+        />
       </div>
+      <h2 className="text-lg font-bold mb-2">{name}</h2>
+      <p className="text-sm text-gray-600 text-center">{description}</p>
     </div>
   );
 }

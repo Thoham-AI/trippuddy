@@ -2,55 +2,98 @@
 
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { saveAs } from "file-saver";
 
-export default function Itinerary({ itinerary }) {
-  if (!itinerary || itinerary.length === 0) return null;
-
-  const downloadPDF = () => {
+export default function Itinerary({ itinerary, destinations }) {
+  // 🟢 Export PDF
+  const exportPDF = () => {
     const doc = new jsPDF();
-    doc.setFontSize(16);
+
+    // Title
+    doc.setFontSize(18);
     doc.text("Travel Itinerary", 14, 20);
 
-    itinerary.forEach((day) => {
-      const rows = day.plan.map((activity, idx) => [idx + 1, activity]);
+    // Destinations section
+    doc.setFontSize(14);
+    doc.text("Suggested Destinations:", 14, 30);
 
-      autoTable(doc, {
-        startY: doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : 30,
-        head: [[`Day ${day.day}`, "Activities"]],
-        body: rows,
-        theme: "grid",
-        headStyles: { fillColor: [66, 139, 202] }, // xanh dương nhạt
-        styles: { fontSize: 11, cellPadding: 3 },
-      });
+    destinations.forEach((d, index) => {
+      const y = 40 + index * 60;
+      doc.setFontSize(12);
+      doc.text(`${d.name}`, 14, y);
+
+      if (d.image) {
+        // Load image
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = d.image;
+        img.onload = function () {
+          doc.addImage(img, "JPEG", 14, y + 5, 50, 30);
+          doc.text(doc.splitTextToSize(d.description || "", 130), 70, y + 15);
+          doc.save("itinerary.pdf"); // Save sau khi ảnh load xong
+        };
+      } else {
+        doc.text(doc.splitTextToSize(d.description || "", 130), 14, y + 15);
+      }
     });
 
-    doc.save("itinerary.pdf");
+    // Itinerary section
+    autoTable(doc, {
+      startY: 40 + destinations.length * 60,
+      head: [["Day", "Plan"]],
+      body: itinerary.map((day) => [day.day, day.plan.join("\n")]),
+    });
+
+    if (!destinations.some((d) => d.image)) {
+      // Save ngay nếu không có ảnh
+      doc.save("itinerary.pdf");
+    }
+  };
+
+  // 🟢 Export CSV
+  const exportCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Day,Plan\n";
+    itinerary.forEach((day) => {
+      csvContent += `${day.day},"${day.plan.join(" | ")}"\n`;
+    });
+
+    csvContent += "\nDestinations:\nName,Description,Image\n";
+    destinations.forEach((d) => {
+      csvContent += `"${d.name}","${d.description}","${d.image}"\n`;
+    });
+
+    const blob = new Blob([decodeURIComponent(encodeURI(csvContent))], {
+      type: "text/csv;charset=utf-8;",
+    });
+    saveAs(blob, "itinerary.csv");
   };
 
   return (
-    <div className="mt-12">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold">📅 Your Itinerary</h2>
+    <div className="mt-6">
+      <div className="flex gap-2 mb-4">
         <button
-          onClick={downloadPDF}
-          className="bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700"
+          onClick={exportPDF}
+          className="bg-blue-800 text-white px-4 py-2 rounded"
         >
-          Download PDF
+          Export PDF
+        </button>
+        <button
+          onClick={exportCSV}
+          className="bg-green-700 text-white px-4 py-2 rounded"
+        >
+          Export CSV
         </button>
       </div>
 
-      <div className="grid gap-6">
-        {itinerary.map((day) => (
-          <div
-            key={day.day}
-            className="bg-white rounded-lg shadow-md p-6 border border-gray-200"
-          >
-            <h3 className="text-lg font-semibold mb-3">Day {day.day}</h3>
-            <ul className="list-disc pl-5 space-y-2">
-              {day.plan.map((activity, idx) => (
-                <li key={idx} className="text-gray-700">
-                  {activity}
-                </li>
+      <h2 className="text-2xl font-bold mb-2">Itinerary</h2>
+      <div className="space-y-4">
+        {itinerary.map((day, i) => (
+          <div key={i} className="border rounded-lg p-4 shadow">
+            <h3 className="font-bold">Day {day.day}</h3>
+            <ul className="list-disc ml-5">
+              {day.plan.map((p, j) => (
+                <li key={j}>{p}</li>
               ))}
             </ul>
           </div>

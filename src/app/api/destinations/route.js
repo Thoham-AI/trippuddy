@@ -1,92 +1,60 @@
 import OpenAI from "openai";
 
 export async function POST(req) {
-  const { prompt } = await req.json();
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
   try {
-    const completion = await client.chat.completions.create({
+    const { prompt } = await req.json();
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
           content: `
-            You are a travel planner AI.
-            Always respond ONLY with a valid JSON object following EXACTLY this schema:
+You are a professional travel planner AI.
+Always respond ONLY with valid JSON in this schema:
 
-            {
-              "destinations": [
-                { "name": "string", "image": "string", "description": "string" }
-              ],
-              "itinerary": [
-                { "day": number, "plan": ["string", "string", "string"] }
-              ]
-            }
-
-            - Do NOT add extra fields like "destination" or "duration".
-            - Do NOT use keys like "day_1", "day_2".
-            - Do NOT add explanations.
-          `,
-        },
+{
+  "destinations": [
+    { "name": "string", "country": "string", "description": "string", "image": "string" }
+  ],
+  "itinerary": [
+    {
+      "day": number,
+      "date": "string (Day 1, Day 2, ...)",
+      "activities": [
         {
-          role: "user",
-          content: `Create a 3-day travel itinerary for: ${prompt}`,
+          "time": "string (e.g. 09:00 - 11:00)",
+          "title": "string (activity name)",
+          "location": "string (place name)",
+          "details": "string (short description, what to expect, tips)",
+          "cost_estimate": "string (approx price in USD or local currency)",
+          "link": "string (Google Maps or official website if available)"
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- 3–6 activities per day with clear time slots.
+- Include food or cultural experiences as activities.
+- Use internationally recognized names in English.
+- Do not include explanations outside JSON.
+`
         },
+        { role: "user", content: prompt }
       ],
       temperature: 0.7,
     });
 
-    let data;
-    try {
-      data = JSON.parse(completion.choices[0].message.content);
-    } catch {
-      data = { destinations: [], itinerary: [] }; // fallback
-    }
+    // Parse AI JSON safely
+    const rawText = response.choices[0].message.content.trim();
+    const data = JSON.parse(rawText);
 
-    // validate & fix if wrong
-    data = validateSchema(data);
-
-    return new Response(JSON.stringify(data), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify(data), { status: 200 });
   } catch (err) {
-    console.error("API error:", err);
-    return new Response(
-      JSON.stringify({ error: "Failed to fetch itinerary" }),
-      { status: 500 }
-    );
+    console.error(err);
+    return new Response(JSON.stringify({ error: "Failed to generate itinerary" }), { status: 500 });
   }
-}
-
-// --- Schema validator ---
-function validateSchema(raw) {
-  const fixed = { destinations: [], itinerary: [] };
-
-  // Destinations
-  if (Array.isArray(raw.destinations)) {
-    fixed.destinations = raw.destinations.map((d) => ({
-      name: d.name || "Unknown",
-      image: d.image || "/fallback.jpg",
-      description: d.description || "",
-    }));
-  }
-
-  // Itinerary
-  if (Array.isArray(raw.itinerary)) {
-    fixed.itinerary = raw.itinerary.map((day, i) => ({
-      day: typeof day.day === "number" ? day.day : i + 1,
-      plan: Array.isArray(day.plan)
-        ? day.plan
-        : Object.values(day.activities || {}).map((a) => a.description),
-    }));
-  } else if (raw.itinerary && typeof raw.itinerary === "object") {
-    // case AI trả { day_1: {...}, day_2: {...} }
-    fixed.itinerary = Object.keys(raw.itinerary).map((k, i) => ({
-      day: i + 1,
-      plan: (raw.itinerary[k].activities || []).map((a) => a.description),
-    }));
-  }
-
-  return fixed;
 }
