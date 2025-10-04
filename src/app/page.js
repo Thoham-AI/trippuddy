@@ -59,11 +59,7 @@ export default function HomePage() {
 
       day.activities.forEach((act) => {
         doc.setFontSize(11);
-        doc.text(
-          `⏰ ${act.time} | ${act.title}`,
-          20,
-          y
-        );
+        doc.text(`⏰ ${act.time} | ${act.title}`, 20, y);
         y += 6;
         doc.text(`📍 ${act.location}`, 24, y);
         y += 6;
@@ -112,6 +108,7 @@ export default function HomePage() {
       "Details",
       "Cost Estimate",
       "Link",
+      "Image",
     ]);
 
     data.itinerary.forEach((day) => {
@@ -125,6 +122,7 @@ export default function HomePage() {
           act.details,
           act.cost_estimate,
           act.link,
+          act.image,
         ]);
       });
     });
@@ -324,7 +322,33 @@ export default function HomePage() {
                   </h3>
                   <ul style={{ margin: 0, paddingLeft: 20 }}>
                     {day.activities.map((act, i) => (
-                      <li key={i} style={{ marginBottom: 10, fontSize: 15 }}>
+                      <li
+                        key={i}
+                        style={{
+                          marginBottom: 16,
+                          fontSize: 15,
+                          listStyle: "none",
+                        }}
+                      >
+                        {/* Image */}
+                        {act.image && (
+                          <img
+                            src={act.image}
+                            alt={act.title}
+                            style={{
+                              width: "100%",
+                              height: 180,
+                              objectFit: "cover",
+                              borderRadius: 6,
+                              marginBottom: 8,
+                            }}
+                            onError={(e) =>
+                              (e.currentTarget.src = "/fallback.jpg")
+                            }
+                          />
+                        )}
+
+                        {/* Info */}
                         <div>
                           <b>{act.time}</b> — {act.title}
                         </div>

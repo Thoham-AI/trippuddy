@@ -1,0 +1,15 @@
+{
+  "Mindil Beach Sunset Market": {
+    "days_open": ["Thursday", "Sunday"],
+    "season": "Dry Season (May-October)",
+    "time": "16:00-21:00"
+  },
+  "Crocosaurus Cove": {
+    "days_open": ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],
+    "time": "09:00-18:00"
+  },
+  "Darwin Waterfront Precinct": {
+    "days_open": ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],
+    "time": "08:00-22:00"
+  }
+}
