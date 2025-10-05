@@ -280,20 +280,25 @@ export default function HomePage() {
                     boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
                   }}
                 >
-                  <img
-                    src={dest.image}
-                    alt={dest.name}
-                    style={{ width: "100%", height: 140, objectFit: "cover" }}
-                    onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
-                  />
-                  <div style={{ padding: 12 }}>
-                    <h3 style={{ margin: "0 0 8px", fontSize: 18 }}>
-                      {dest.name}
-                    </h3>
-                    <p style={{ margin: 0, fontSize: 14, color: "#555" }}>
-                      {dest.description}
-                    </p>
-                  </div>
+		<img
+		  src={dest.image}
+		  alt={dest.name}
+		  style={{
+		    width: "100%",
+		    maxWidth: 900, // limit width (try 800–1000 for best fit)
+		    height: 140,
+		    objectFit: "contain", // show the full image
+		    display: "block",
+		    margin: "0 auto",
+		    borderRadius: 12,
+		    boxShadow: "0 2px 6px rgba(0, 0, 0, 0.15)",
+		  }}
+  		  onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
+		/>
+		<div style={{ padding: 12 }}>
+  		  <h3 style={{ margin: "0 0 8px", fontSize: 18 }}>{dest.name}</h3>
+  		  <p style={{ margin: 0, fontSize: 14, color: "#555" }}>{dest.description}</p>
+		</div>
                 </div>
               ))}
             </div>
