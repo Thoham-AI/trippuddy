@@ -8,6 +8,7 @@ export default function HomePage() {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState({ destinations: [], itinerary: [] });
+  const [popupImage, setPopupImage] = useState(null); // for popup
 
   // --- Call API ---
   const generateItinerary = async () => {
@@ -38,7 +39,6 @@ export default function HomePage() {
 
     let y = 30;
 
-    // Destinations
     doc.setFontSize(14);
     doc.text("Destinations:", 14, y);
     y += 10;
@@ -47,16 +47,13 @@ export default function HomePage() {
       y += 8;
     });
 
-    // Itinerary
     y += 10;
-    doc.setFontSize(14);
     doc.text("Itinerary:", 14, y);
     y += 10;
     data.itinerary.forEach((day) => {
       doc.setFontSize(13);
       doc.text(`${day.date || `Day ${day.day}`}:`, 14, y);
       y += 8;
-
       day.activities.forEach((act) => {
         doc.setFontSize(11);
         doc.text(`⏰ ${act.time} | ${act.title}`, 20, y);
@@ -79,7 +76,6 @@ export default function HomePage() {
           y = 20;
         }
       });
-
       y += 8;
     });
 
@@ -89,8 +85,6 @@ export default function HomePage() {
   // --- Export CSV ---
   const exportCSV = () => {
     const rows = [];
-
-    // Destinations
     rows.push(["Destinations"]);
     rows.push(["Name", "Country", "Description", "Image"]);
     data.destinations.forEach((d) => {
@@ -280,28 +274,29 @@ export default function HomePage() {
                     boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
                   }}
                 >
-<img
-  src={dest.image}
-  alt={dest.name}
-  style={{
-    width: "100%",
-    maxHeight: 180,
-    objectFit: "contain",
-    display: "block",
-    backgroundColor: "#f8f8f8",
-    borderBottom: "1px solid #eee",
-  }}
-  onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
-/>
-<div style={{ padding: 12 }}>
-  <h3 style={{ margin: "0 0 8px", fontSize: 18 }}>{dest.name}</h3>
-  <p style={{ margin: 0, fontSize: 14, color: "#555" }}>{dest.description}</p>
-</div>
-
-		<div style={{ padding: 12 }}>
-  		  <h3 style={{ margin: "0 0 8px", fontSize: 18 }}>{dest.name}</h3>
-  		  <p style={{ margin: 0, fontSize: 14, color: "#555" }}>{dest.description}</p>
-		</div>
+                  <img
+                    src={dest.image}
+                    alt={dest.name}
+                    style={{
+                      width: "100%",
+                      maxHeight: 180,
+                      objectFit: "contain",
+                      display: "block",
+                      backgroundColor: "#f8f8f8",
+                      borderBottom: "1px solid #eee",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => setPopupImage(dest.image)}
+                    onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
+                  />
+                  <div style={{ padding: 12 }}>
+                    <h3 style={{ margin: "0 0 8px", fontSize: 18 }}>
+                      {dest.name}
+                    </h3>
+                    <p style={{ margin: 0, fontSize: 14, color: "#555" }}>
+                      {dest.description}
+                    </p>
+                  </div>
                 </div>
               ))}
             </div>
@@ -338,26 +333,27 @@ export default function HomePage() {
                           listStyle: "none",
                         }}
                       >
-                        {/* Image */}
                         {act.image && (
                           <img
-  			src={act.image}
-  			alt={act.title}
-  			style={{
-			    width: "100%",
-			    maxHeight: 220,
-			    objectFit: "contain",
-			    display: "block",
-			    margin: "8px auto",
-			    backgroundColor: "#f9fafb",
-			    borderRadius: 6,
-			  }}
-			  onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
-			/>
-
+                            src={act.image}
+                            alt={act.title}
+                            style={{
+                              width: "100%",
+                              maxHeight: 220,
+                              objectFit: "contain",
+                              display: "block",
+                              margin: "8px auto",
+                              backgroundColor: "#f9fafb",
+                              borderRadius: 6,
+                              cursor: "pointer",
+                            }}
+                            onClick={() => setPopupImage(act.image)}
+                            onError={(e) =>
+                              (e.currentTarget.src = "/fallback.jpg")
+                            }
+                          />
                         )}
 
-                        {/* Info */}
                         <div>
                           <b>{act.time}</b> — {act.title}
                         </div>
@@ -391,6 +387,34 @@ export default function HomePage() {
           </>
         )}
       </div>
+
+      {/* Popup Modal for Image */}
+      {popupImage && (
+        <div
+          onClick={() => setPopupImage(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.8)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999,
+            cursor: "zoom-out",
+          }}
+        >
+          <img
+            src={popupImage}
+            alt="Full Size"
+            style={{
+              maxWidth: "90%",
+              maxHeight: "90%",
+              borderRadius: 8,
+              boxShadow: "0 0 20px rgba(0,0,0,0.4)",
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
