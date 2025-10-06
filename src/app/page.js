@@ -280,21 +280,24 @@ export default function HomePage() {
                     boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
                   }}
                 >
-		<img
-		  src={dest.image}
-		  alt={dest.name}
-		  style={{
-		    width: "100%",
-		    maxWidth: 900, // limit width (try 800–1000 for best fit)
-		    height: 140,
-		    objectFit: "contain", // show the full image
-		    display: "block",
-		    margin: "0 auto",
-		    borderRadius: 12,
-		    boxShadow: "0 2px 6px rgba(0, 0, 0, 0.15)",
-		  }}
-  		  onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
-		/>
+<img
+  src={dest.image}
+  alt={dest.name}
+  style={{
+    width: "100%",
+    maxHeight: 180,
+    objectFit: "contain",
+    display: "block",
+    backgroundColor: "#f8f8f8",
+    borderBottom: "1px solid #eee",
+  }}
+  onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
+/>
+<div style={{ padding: 12 }}>
+  <h3 style={{ margin: "0 0 8px", fontSize: 18 }}>{dest.name}</h3>
+  <p style={{ margin: 0, fontSize: 14, color: "#555" }}>{dest.description}</p>
+</div>
+
 		<div style={{ padding: 12 }}>
   		  <h3 style={{ margin: "0 0 8px", fontSize: 18 }}>{dest.name}</h3>
   		  <p style={{ margin: 0, fontSize: 14, color: "#555" }}>{dest.description}</p>
@@ -338,19 +341,20 @@ export default function HomePage() {
                         {/* Image */}
                         {act.image && (
                           <img
-                            src={act.image}
-                            alt={act.title}
-                            style={{
-                              width: "100%",
-                              height: 180,
-                              objectFit: "cover",
-                              borderRadius: 6,
-                              marginBottom: 8,
-                            }}
-                            onError={(e) =>
-                              (e.currentTarget.src = "/fallback.jpg")
-                            }
-                          />
+  			src={act.image}
+  			alt={act.title}
+  			style={{
+			    width: "100%",
+			    maxHeight: 220,
+			    objectFit: "contain",
+			    display: "block",
+			    margin: "8px auto",
+			    backgroundColor: "#f9fafb",
+			    borderRadius: 6,
+			  }}
+			  onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
+			/>
+
                         )}
 
                         {/* Info */}
