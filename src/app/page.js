@@ -8,7 +8,7 @@ export default function HomePage() {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState({ destinations: [], itinerary: [] });
-  const [popupImage, setPopupImage] = useState(null); // for popup
+  const [popupImage, setPopupImage] = useState(null);
 
   // --- Call API ---
   const generateItinerary = async () => {
@@ -20,34 +20,72 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
       });
-      if (!res.ok) throw new Error("Failed to fetch");
-      let json = await res.json();
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Server Error: ${errText}`);
+      }
+
+      const json = await res.json();
       setData(json);
     } catch (err) {
-      console.error(err);
+      console.error("❌ Fetch error:", err);
+      alert("Failed to generate itinerary. Please try again.");
       setData({ destinations: [], itinerary: [] });
     } finally {
       setLoading(false);
     }
   };
 
+  // --- Helper: wrap long text for PDF ---
+  const wrapText = (doc, text, x, y, maxWidth, lineHeight) => {
+    const splitText = doc.splitTextToSize(text, maxWidth);
+    splitText.forEach((line) => {
+      doc.text(line, x, y);
+      y += lineHeight;
+    });
+    return y;
+  };
+
   // --- Export PDF ---
   const exportPDF = () => {
     const doc = new jsPDF();
-    doc.setFontSize(16);
+    doc.setFontSize(18);
     doc.text("Travel Itinerary", 14, 20);
-
     let y = 30;
 
+    // Destinations
     doc.setFontSize(14);
     doc.text("Destinations:", 14, y);
     y += 10;
     data.destinations.forEach((d, i) => {
-      doc.text(`${i + 1}. ${d.name} (${d.country}) - ${d.description}`, 14, y);
-      y += 8;
+      y = wrapText(
+        doc,
+        `${i + 1}. ${d.name} (${d.country}) - ${d.description}`,
+        14,
+        y,
+        180,
+        8
+      );
+      if (d.weather) {
+        y = wrapText(
+          doc,
+          `🌤 ${d.weather.temp}°C — ${d.weather.condition}`,
+          20,
+          y,
+          180,
+          8
+        );
+      }
+      y += 4;
+      if (y > 270) {
+        doc.addPage();
+        y = 20;
+      }
     });
 
-    y += 10;
+    // Itinerary
+    doc.setFontSize(14);
     doc.text("Itinerary:", 14, y);
     y += 10;
     data.itinerary.forEach((day) => {
@@ -56,21 +94,24 @@ export default function HomePage() {
       y += 8;
       day.activities.forEach((act) => {
         doc.setFontSize(11);
-        doc.text(`⏰ ${act.time} | ${act.title}`, 20, y);
-        y += 6;
-        doc.text(`📍 ${act.location}`, 24, y);
-        y += 6;
-        doc.text(`💰 ${act.cost_estimate}`, 24, y);
-        y += 6;
-        if (act.details) {
-          doc.text(`${act.details}`, 24, y);
-          y += 8;
+        y = wrapText(doc, `⏰ ${act.time} | ${act.title}`, 20, y, 170, 6);
+        y = wrapText(doc, `📍 ${act.location}`, 24, y, 170, 6);
+        if (act.weather) {
+          y = wrapText(
+            doc,
+            `🌤 ${act.weather.temp}°C — ${act.weather.condition}`,
+            24,
+            y,
+            170,
+            6
+          );
         }
-        if (act.link) {
-          doc.text(`🔗 ${act.link}`, 24, y);
-          y += 8;
-        }
-        y += 4;
+        if (act.cost_estimate)
+          y = wrapText(doc, `💰 ${act.cost_estimate}`, 24, y, 170, 6);
+        if (act.details) y = wrapText(doc, act.details, 24, y, 170, 6);
+        if (act.link) y = wrapText(doc, `🔗 ${act.link}`, 24, y, 170, 6);
+
+        y += 6;
         if (y > 270) {
           doc.addPage();
           y = 20;
@@ -86,9 +127,15 @@ export default function HomePage() {
   const exportCSV = () => {
     const rows = [];
     rows.push(["Destinations"]);
-    rows.push(["Name", "Country", "Description", "Image"]);
+    rows.push(["Name", "Country", "Description", "Weather", "Image"]);
     data.destinations.forEach((d) => {
-      rows.push([d.name, d.country, d.description, d.image]);
+      rows.push([
+        d.name,
+        d.country,
+        d.description,
+        d.weather ? `${d.weather.temp}°C - ${d.weather.condition}` : "",
+        d.image,
+      ]);
     });
 
     rows.push([]);
@@ -99,6 +146,7 @@ export default function HomePage() {
       "Time",
       "Title",
       "Location",
+      "Weather",
       "Details",
       "Cost Estimate",
       "Link",
@@ -113,6 +161,9 @@ export default function HomePage() {
           act.time,
           act.title,
           act.location,
+          act.weather
+            ? `${act.weather.temp}°C - ${act.weather.condition}`
+            : "",
           act.details,
           act.cost_estimate,
           act.link,
@@ -296,6 +347,18 @@ export default function HomePage() {
                     <p style={{ margin: 0, fontSize: 14, color: "#555" }}>
                       {dest.description}
                     </p>
+                    {/* Weather under destination */}
+                    {dest.weather && (
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 14,
+                          color: "#0ea5e9",
+                        }}
+                      >
+                        🌤 {dest.weather.temp}°C — {dest.weather.condition}
+                      </p>
+                    )}
                   </div>
                 </div>
               ))}
@@ -353,13 +416,29 @@ export default function HomePage() {
                             }
                           />
                         )}
-
                         <div>
                           <b>{act.time}</b> — {act.title}
                         </div>
                         <div style={{ color: "#555", marginLeft: 10 }}>
                           📍 {act.location}
                         </div>
+
+                        {/* 🌤 WEATHER */}
+                        {act.weather && (
+  			   <div style={{ color: "#0ea5e9", marginLeft: 10 }}>
+   			    <a
+     			     href={act.weather.link}
+      			     target="_blank"
+      			     rel="noopener noreferrer"
+      			    style={{ color: "#0ea5e9", textDecoration: "none" }}
+    			   >
+      			    🌤 {act.weather.temp}°C
+    			   </a>{" "}
+    			   — {act.weather.description}
+  			  </div>
+			)}
+
+
                         <div style={{ color: "#444", marginLeft: 10 }}>
                           {act.details}
                         </div>
@@ -388,7 +467,7 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* Popup Modal for Image */}
+      {/* Image Popup Modal */}
       {popupImage && (
         <div
           onClick={() => setPopupImage(null)}

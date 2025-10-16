@@ -1,16 +1,15 @@
-// src/app/api/destinations/route.js
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import fs from "fs";
 import path from "path";
-import { PDFDocument, rgb } from "pdf-lib"; // cleaned
-// ✅ Using native fetch (Next.js runtime)
+import puppeteer from "puppeteer";
 
-const FONT_PATH = path.join(process.cwd(), "public", "fonts", "NotoSans-Regular.ttf");
+const TMP_DIR = "/tmp";
+if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 
-// --- Cache ---
-const CACHE_PATH = "/tmp/travel_ai_cache.json";
-let cache = { coords: {}, hours: {}, images: {} };
+const CACHE_PATH = path.join(TMP_DIR, "travel_ai_cache.json");
+let cache = { coords: {}, hours: {}, images: {}, weather: {} };
+
 try {
   if (fs.existsSync(CACHE_PATH)) {
     cache = JSON.parse(fs.readFileSync(CACHE_PATH, "utf-8"));
@@ -48,24 +47,37 @@ async function fetchUnsplashImage(query) {
   return "/fallback.jpg";
 }
 
+// --- Helper for timeout fetch ---
+async function fetchWithTimeout(resource, options = {}) {
+  const { timeout = 8000 } = options;
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  const response = await fetch(resource, { ...options, signal: controller.signal });
+  clearTimeout(id);
+  return response;
+}
+
 // --- Nominatim ---
 async function fetchCoordinates(placeName, city = "") {
   const key = `${placeName}-${city}`;
   if (cache.coords[key]) return cache.coords[key];
+
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+    placeName + " " + city
+  )}`;
+
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-        placeName + " " + city
-      )}`,
-      { headers: { "User-Agent": "travel-ai-app" } }
-    );
+    const res = await fetchWithTimeout(url, {
+      timeout: 8000,
+      headers: { "User-Agent": "travel-ai-app" },
+    });
     const text = await res.text();
     if (!text.startsWith("[") && !text.startsWith("{")) return null;
     const data = JSON.parse(text);
     if (data.length > 0) {
       const coords = {
-        lat: data[0].lat,
-        lon: data[0].lon,
+        lat: parseFloat(data[0].lat),
+        lon: parseFloat(data[0].lon),
         display_name: data[0].display_name,
       };
       cache.coords[key] = coords;
@@ -73,7 +85,7 @@ async function fetchCoordinates(placeName, city = "") {
       return coords;
     }
   } catch (err) {
-    console.error("Nominatim error:", err);
+    console.warn(`Nominatim failed:`, err.message);
   }
   return null;
 }
@@ -89,9 +101,10 @@ async function fetchOpeningHours(lat, lon) {
     out 1;
   `;
   try {
-    const res = await fetch("https://overpass-api.de/api/interpreter", {
+    const res = await fetchWithTimeout("https://overpass-api.de/api/interpreter", {
       method: "POST",
       body: query,
+      timeout: 10000,
     });
     const text = await res.text();
     if (!text.startsWith("{")) return null;
@@ -108,6 +121,58 @@ async function fetchOpeningHours(lat, lon) {
   return null;
 }
 
+// --- OpenWeather (safe with forecast link) ---
+async function fetchWeather(lat, lon) {
+  if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
+    console.warn("⚠️ Skipping weather due to invalid coordinates:", lat, lon);
+    return null;
+  }
+
+  if (!cache.weather) cache.weather = {};
+  const key = `${lat},${lon}`;
+  if (cache.weather[key]) {
+    console.log("✅ Returning cached weather for", key);
+    return cache.weather[key];
+  }
+
+  try {
+    const apiKey = process.env.OPENWEATHER_API_KEY;
+    console.log("🔑 OPENWEATHER_API_KEY loaded:", !!apiKey);
+    if (!apiKey) {
+      console.error("❌ No OPENWEATHER_API_KEY found.");
+      return null;
+    }
+
+    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
+    const res = await fetchWithTimeout(url, { timeout: 8000 });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error("❌ OpenWeather HTTP Error:", res.status, errText);
+      return null;
+    }
+
+    const data = await res.json();
+    if (data && data.weather && data.main) {
+      const info = {
+        temp: Math.round(data.main.temp),
+        description: data.weather[0].description,
+        icon: `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`,
+        link: `https://openweathermap.org/weathermap?zoom=8&lat=${lat}&lon=${lon}`,
+      };
+      cache.weather[key] = info;
+      saveCache();
+      console.log("✅ Weather fetched successfully for", key);
+      return info;
+    }
+  } catch (err) {
+    console.error("❌ OpenWeather error:", err);
+  }
+
+  console.warn("⚠️ No weather data returned for", key);
+  return null;
+}
+
 // --- Google Maps ---
 function generateGoogleMapsLink(placeName, country = "") {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
@@ -115,127 +180,110 @@ function generateGoogleMapsLink(placeName, country = "") {
   )}`;
 }
 
-// --- PDF generator ---
+// --- Puppeteer-based PDF Generator ---
 async function generatePDF(itineraryData) {
-  const pdfDoc = await PDFDocument.create();
-  const fontBytes = fs.readFileSync(FONT_PATH);
-  const font = await pdfDoc.embedFont(fontBytes);
-
-  const pageMargin = 50;
-  let page = pdfDoc.addPage([595.28, 841.89]); // A4
-  let y = page.getHeight() - pageMargin;
-
-  const newPage = () => {
-    page = pdfDoc.addPage([595.28, 841.89]);
-    y = page.getHeight() - pageMargin;
-  };
-
-  const drawWrappedText = (text, size = 12, indent = 0) => {
-    const maxWidth = page.getWidth() - pageMargin * 2 - indent;
-    const words = text.split(" ");
-    let line = "";
-    for (const word of words) {
-      const testLine = line + word + " ";
-      const width = font.widthOfTextAtSize(testLine, size);
-      if (width > maxWidth) {
-        page.drawText(line, { x: pageMargin + indent, y, size, font });
-        line = word + " ";
-        y -= size + 4;
-        if (y < 100) newPage();
-      } else {
-        line = testLine;
-      }
-    }
-    if (line) {
-      page.drawText(line, { x: pageMargin + indent, y, size, font });
-      y -= size + 4;
-    }
-  };
-
-  const drawImage = async (imgUrl, maxWidth = 300) => {
-    try {
-      const imgBytes = await fetch(imgUrl).then((r) => r.arrayBuffer());
-      let embeddedImg;
-      try {
-        embeddedImg = await pdfDoc.embedJpg(imgBytes);
-      } catch {
-        embeddedImg = await pdfDoc.embedPng(imgBytes);
-      }
-
-      const aspect = embeddedImg.height / embeddedImg.width;
-      const imgWidth = Math.min(maxWidth, page.getWidth() - 2 * pageMargin);
-      const imgHeight = imgWidth * aspect;
-      if (y - imgHeight < 100) newPage();
-      page.drawImage(embeddedImg, {
-        x: pageMargin,
-        y: y - imgHeight,
-        width: imgWidth,
-        height: imgHeight,
-      });
-      y -= imgHeight + 10;
-    } catch (e) {
-      console.warn("Image embed failed:", imgUrl);
-    }
-  };
-
-  // --- Title
-  page.drawText("🗺️ Travel Itinerary", {
-    x: pageMargin,
-    y,
-    size: 20,
-    font,
-    color: rgb(0.1, 0.1, 0.4),
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
-  y -= 40;
+  const page = await browser.newPage();
 
-  // --- Destinations
-  drawWrappedText("Destinations:", 16);
-  for (const dest of itineraryData.destinations) {
-    drawWrappedText(`${dest.name} (${dest.country}) - ${dest.description}`, 12);
-    if (dest.image) await drawImage(dest.image);
-  }
+  const html = `
+    <html>
+      <head>
+        <meta charset="UTF-8" />
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Noto+Sans&display=swap');
+          body {
+            font-family: 'Noto Sans', sans-serif;
+            padding: 40px;
+            color: #222;
+            background: #fff;
+          }
+          h1 { color: #003366; font-size: 28px; margin-bottom: 20px; }
+          h2 { color: #004080; font-size: 22px; margin-top: 30px; }
+          h3 { color: #0059b3; font-size: 18px; margin-top: 20px; }
+          p { font-size: 14px; line-height: 1.6; }
+          img { max-width: 100%; border-radius: 10px; margin: 10px 0; }
+          .dest-card { margin-bottom: 30px; }
+          .activity { margin-bottom: 15px; }
+          .footer { text-align:center; margin-top:40px; font-size:12px; color:#555; }
+        </style>
+      </head>
+      <body>
+        <h1>🗺️ Travel Itinerary</h1>
+        <h2>Destinations:</h2>
+        ${itineraryData.destinations
+          .map(
+            (d, i) => `
+            <div class="dest-card">
+              <h3>${i + 1}. ${d.name} (${d.country})</h3>
+              <p>${d.description}</p>
+              ${d.image ? `<img src="${d.image}" />` : ""}
+            </div>`
+          )
+          .join("")}
 
-  // --- Itinerary
-  drawWrappedText("Itinerary:", 16);
-  for (const day of itineraryData.itinerary) {
-    drawWrappedText(`Day ${day.day}: ${day.date}`, 14);
-    for (const act of day.activities) {
-      drawWrappedText(`${act.time} - ${act.title}`, 12, 10);
-      drawWrappedText(act.details || "", 10, 20);
-      if (act.image) await drawImage(act.image, 250);
-    }
-  }
+        <h2>Itinerary:</h2>
+        ${itineraryData.itinerary
+          .map(
+            (day) => `
+              <h3>Day ${day.day}: ${day.date}</h3>
+              ${day.activities
+                .map(
+                  (a) => `
+                    <div class="activity">
+                      <strong>${a.time} — ${a.title}</strong><br />
+                      <p>${a.details || ""}</p>
+                      ${a.image ? `<img src="${a.image}" />` : ""}
+                    </div>`
+                )
+                .join("")}`
+          )
+          .join("")}
 
-  return await pdfDoc.save();
+        <div class="footer">Generated by Travel AI Assistant</div>
+      </body>
+    </html>
+  `;
+
+  await page.setContent(html, { waitUntil: "networkidle0" });
+  const pdfBytes = await page.pdf({ format: "A4", printBackground: true });
+  await browser.close();
+  return pdfBytes;
 }
 
-// --- Main POST ---
+// --- POST ---
 export async function POST(req) {
   try {
-    const { prompt, exportPdf } = await req.json();
+    const { prompt, style, exportPdf } = await req.json();
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    const ai = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `
+    const today = new Date();
+    const currentDate = today.toISOString().split("T")[0];
+
+    const systemPrompt = `
 You are a professional travel planner AI.
+The user wants the itinerary to reflect their personal travel style: "${style || "general"}".
 Always respond ONLY with valid JSON:
 {
   "destinations":[{"name":"string","country":"string","description":"string","image":"string"}],
   "itinerary":[{"day":number,"date":"string","activities":[{"time":"string","title":"string","location":"string","details":"string","cost_estimate":"string","link":"string","image":"string"}]}]
 }
 - 3–6 activities per day
-- Include food or cultural experiences
+- Include food or cultural experiences if they match the style
 - Use internationally recognized names in English
+- The itinerary must start from today’s date: ${currentDate}
 - No extra explanations outside JSON
-          `,
-        },
+    `;
+
+    const ai = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
         { role: "user", content: prompt },
       ],
-      temperature: 0.7,
+      temperature: 0.8,
     });
 
     const rawText = ai.choices[0].message.content.trim();
@@ -247,6 +295,7 @@ Always respond ONLY with valid JSON:
       return NextResponse.json({ error: "AI response invalid" }, { status: 500 });
     }
 
+    // Enrich itinerary with coordinates, opening hours, weather, images
     for (const day of data.itinerary) {
       for (const act of day.activities) {
         const coords = await fetchCoordinates(act.location);
@@ -254,6 +303,8 @@ Always respond ONLY with valid JSON:
           act.coordinates = coords;
           const hours = await fetchOpeningHours(coords.lat, coords.lon);
           if (hours) act.details += ` | Opening hours: ${hours}`;
+          const weather = await fetchWeather(coords.lat, coords.lon);
+          if (weather) act.weather = weather;
         }
         if (!act.link || act.link.includes("goo.gl") || act.link.includes("firebase")) {
           act.link = generateGoogleMapsLink(act.location);
@@ -267,7 +318,6 @@ Always respond ONLY with valid JSON:
       dest.mapUrl = generateGoogleMapsLink(dest.name, dest.country);
     }
 
-    // 📝 If PDF requested, return file
     if (exportPdf) {
       const pdfBytes = await generatePDF(data);
       return new NextResponse(pdfBytes, {
@@ -280,7 +330,10 @@ Always respond ONLY with valid JSON:
 
     return NextResponse.json(data);
   } catch (err) {
-    console.error("API Error:", err);
-    return NextResponse.json({ error: "Failed to generate itinerary" }, { status: 500 });
+    console.error("💥 API Error:", err);
+    return NextResponse.json(
+      { error: "Failed to generate itinerary", details: err.message },
+      { status: 500 }
+    );
   }
 }
