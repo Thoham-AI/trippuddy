@@ -121,44 +121,57 @@ async function fetchOpeningHours(lat, lon) {
   return null;
 }
 
-// --- OpenWeather (safe with forecast link) ---
-async function fetchWeather(lat, lon) {
+// --- OpenWeather (Forecast) ---
+async function fetchWeather(lat, lon, dateString = null) {
   if (!lat || !lon || isNaN(lat) || isNaN(lon)) {
     console.warn("⚠️ Skipping weather due to invalid coordinates:", lat, lon);
     return null;
   }
 
-  if (!cache.weather) cache.weather = {};
-  const key = `${lat},${lon}`;
+  const key = `${lat},${lon},${dateString || "today"}`;
   if (cache.weather[key]) {
     console.log("✅ Returning cached weather for", key);
     return cache.weather[key];
   }
 
-  try {
-    const apiKey = process.env.OPENWEATHER_API_KEY;
-    console.log("🔑 OPENWEATHER_API_KEY loaded:", !!apiKey);
-    if (!apiKey) {
-      console.error("❌ No OPENWEATHER_API_KEY found.");
-      return null;
-    }
+  const apiKey = process.env.OPENWEATHER_API_KEY;
+  console.log("🔑 OPENWEATHER_API_KEY loaded:", !!apiKey);
+  if (!apiKey) {
+    console.error("❌ No OPENWEATHER_API_KEY found.");
+    return null;
+  }
 
-    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
+  try {
+    const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
     const res = await fetchWithTimeout(url, { timeout: 8000 });
 
     if (!res.ok) {
-      const errText = await res.text();
-      console.error("❌ OpenWeather HTTP Error:", res.status, errText);
+      console.error("❌ OpenWeather Forecast Error:", res.status, await res.text());
       return null;
     }
 
     const data = await res.json();
-    if (data && data.weather && data.main) {
+    if (!data.list?.length) return null;
+
+    let target;
+    if (dateString) {
+      const targetDate = new Date(dateString);
+      target = data.list.reduce((closest, item) => {
+        const itemDate = new Date(item.dt * 1000);
+        const diff = Math.abs(itemDate - targetDate);
+        return !closest || diff < closest.diff ? { item, diff } : closest;
+      }, null)?.item;
+    } else {
+      target = data.list[0];
+    }
+
+    if (target) {
       const info = {
-        temp: Math.round(data.main.temp),
-        description: data.weather[0].description,
-        icon: `https://openweathermap.org/img/wn/${data.weather[0].icon}@2x.png`,
+        temp: Math.round(target.main.temp),
+        description: target.weather[0].description,
+        icon: `https://openweathermap.org/img/wn/${target.weather[0].icon}@2x.png`,
         link: `https://openweathermap.org/weathermap?zoom=8&lat=${lat}&lon=${lon}`,
+        timestamp: target.dt,
       };
       cache.weather[key] = info;
       saveCache();
@@ -194,12 +207,7 @@ async function generatePDF(itineraryData) {
         <meta charset="UTF-8" />
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Noto+Sans&display=swap');
-          body {
-            font-family: 'Noto Sans', sans-serif;
-            padding: 40px;
-            color: #222;
-            background: #fff;
-          }
+          body { font-family: 'Noto Sans', sans-serif; padding: 40px; color: #222; background: #fff; }
           h1 { color: #003366; font-size: 28px; margin-bottom: 20px; }
           h2 { color: #004080; font-size: 22px; margin-top: 30px; }
           h3 { color: #0059b3; font-size: 18px; margin-top: 20px; }
@@ -213,35 +221,21 @@ async function generatePDF(itineraryData) {
       <body>
         <h1>🗺️ Travel Itinerary</h1>
         <h2>Destinations:</h2>
-        ${itineraryData.destinations
-          .map(
-            (d, i) => `
-            <div class="dest-card">
-              <h3>${i + 1}. ${d.name} (${d.country})</h3>
-              <p>${d.description}</p>
-              ${d.image ? `<img src="${d.image}" />` : ""}
-            </div>`
-          )
-          .join("")}
-
+        ${itineraryData.destinations.map((d, i) => `
+          <div class="dest-card">
+            <h3>${i + 1}. ${d.name} (${d.country})</h3>
+            <p>${d.description}</p>
+            ${d.image ? `<img src="${d.image}" />` : ""}
+          </div>`).join("")}
         <h2>Itinerary:</h2>
-        ${itineraryData.itinerary
-          .map(
-            (day) => `
-              <h3>Day ${day.day}: ${day.date}</h3>
-              ${day.activities
-                .map(
-                  (a) => `
-                    <div class="activity">
-                      <strong>${a.time} — ${a.title}</strong><br />
-                      <p>${a.details || ""}</p>
-                      ${a.image ? `<img src="${a.image}" />` : ""}
-                    </div>`
-                )
-                .join("")}`
-          )
-          .join("")}
-
+        ${itineraryData.itinerary.map((day) => `
+          <h3>Day ${day.day}: ${day.date}</h3>
+          ${day.activities.map((a) => `
+            <div class="activity">
+              <strong>${a.time} — ${a.title}</strong><br />
+              <p>${a.details || ""}</p>
+              ${a.image ? `<img src="${a.image}" />` : ""}
+            </div>`).join("")}`).join("")}
         <div class="footer">Generated by Travel AI Assistant</div>
       </body>
     </html>
@@ -295,7 +289,7 @@ Always respond ONLY with valid JSON:
       return NextResponse.json({ error: "AI response invalid" }, { status: 500 });
     }
 
-    // Enrich itinerary with coordinates, opening hours, weather, images
+    // Enrich itinerary with coordinates, opening hours, forecast weather, images
     for (const day of data.itinerary) {
       for (const act of day.activities) {
         const coords = await fetchCoordinates(act.location);
@@ -303,7 +297,7 @@ Always respond ONLY with valid JSON:
           act.coordinates = coords;
           const hours = await fetchOpeningHours(coords.lat, coords.lon);
           if (hours) act.details += ` | Opening hours: ${hours}`;
-          const weather = await fetchWeather(coords.lat, coords.lon);
+          const weather = await fetchWeather(coords.lat, coords.lon, day.date);
           if (weather) act.weather = weather;
         }
         if (!act.link || act.link.includes("goo.gl") || act.link.includes("firebase")) {
