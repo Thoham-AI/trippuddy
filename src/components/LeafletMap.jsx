@@ -26,7 +26,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow.src || markerShadow,
 });
 
-// ---- helpers ----
+/* ---------------- FitToBounds helper ---------------- */
 function FitToBounds({ bounds }) {
   const map = useMap();
   useEffect(() => {
@@ -37,7 +37,7 @@ function FitToBounds({ bounds }) {
   return null;
 }
 
-// Bearing (degrees) from A -> B
+/* ---------------- Bearing helper ---------------- */
 function bearingDeg(a, b) {
   const toRad = (x) => (x * Math.PI) / 180;
   const toDeg = (x) => (x * 180) / Math.PI;
@@ -53,21 +53,20 @@ function bearingDeg(a, b) {
   return (toDeg(θ) + 360) % 360;
 }
 
-// Create & animate a rotating emoji marker along a path
+/* ---------------- Animated emoji marker ---------------- */
 function AnimatedEmoji({ path = [], mode = "drive" }) {
   const map = useMap();
 
   useEffect(() => {
     if (!map || !path || path.length < 2) return;
 
-    // Build an expanded list of points for smooth animation
     const latlngs = path.map(([lat, lon]) => L.latLng(lat, lon));
     const expanded = [];
     for (let i = 0; i < latlngs.length - 1; i++) {
       const a = latlngs[i];
       const b = latlngs[i + 1];
-      const dist = map.distance(a, b); // meters
-      const step = mode === "walk" ? 8 : 20; // meters per substep
+      const dist = map.distance(a, b);
+      const step = mode === "walk" ? 8 : 20;
       const n = Math.max(2, Math.floor(dist / step));
       for (let k = 0; k < n; k++) {
         const t = k / n;
@@ -78,7 +77,6 @@ function AnimatedEmoji({ path = [], mode = "drive" }) {
     }
     expanded.push(latlngs[latlngs.length - 1]);
 
-    // Emoji + rotate inner span so we don't fight Leaflet translate transforms
     const emoji = mode === "walk" ? "👣" : "🚗";
     const icon = L.divIcon({
       className: "emoji-marker",
@@ -91,19 +89,16 @@ function AnimatedEmoji({ path = [], mode = "drive" }) {
 
     let frameId;
     let idx = 0;
+    const stepMs = 33;
 
-    const stepMs = 33; // ~30 FPS
     function tick() {
       const cur = expanded[idx];
       const nxt = expanded[(idx + 1) % expanded.length];
-
       marker.setLatLng(cur);
 
-      // rotate inner div to match bearing
       const el = marker.getElement()?.querySelector(".emoji-marker-inner");
       if (el) {
         const angle = bearingDeg(cur, nxt);
-        // rotate the inner, keep translate from Leaflet
         el.style.transform = `rotate(${angle}deg)`;
       }
 
@@ -112,7 +107,6 @@ function AnimatedEmoji({ path = [], mode = "drive" }) {
     }
 
     frameId = requestAnimationFrame(tick);
-
     return () => {
       clearTimeout(frameId);
       marker.remove();
@@ -122,112 +116,137 @@ function AnimatedEmoji({ path = [], mode = "drive" }) {
   return null;
 }
 
+/* ---------------- Main component ---------------- */
 export default function LeafletMap({
   lat,
   lon,
   popup,
-  routes = [],      // [{ mode: "walk"|"drive", latlngs: [[lat,lon], ...] }]
-  bounds = null,    // [[lat,lon], ...] (optional)
-  user = null,      // { lat, lon } (optional, NOT routed)
+  routes = [],
+  bounds = null,
+  user = null,
 }) {
-  // keep controls clickable above UI
+  // Ensure zoom controls stay above other UI
   useEffect(() => {
     const ctr = document.querySelector(".leaflet-control-container");
     if (ctr) ctr.style.zIndex = "10000";
   }, []);
 
-  // Build one continuous path for the animation (use all segments)
-  const animatedPath = routes
-    .filter(Boolean)
-    .flatMap((seg) => seg.latlngs || []);
-
-  // Choose animation mode from first segment (fallback to drive)
+  const animatedPath = routes.filter(Boolean).flatMap((seg) => seg.latlngs || []);
   const animMode = routes[0]?.mode || "drive";
 
   return (
-    <MapContainer
-      center={[lat, lon]}
-      zoom={15}
-      zoomControl={true}
-      scrollWheelZoom={true}
+    <div
+      // ✅ Prevent DnD-kit from hijacking map events
+      onPointerDownCapture={(e) => e.stopPropagation()}
+      onMouseDownCapture={(e) => e.stopPropagation()}
+      onTouchStartCapture={(e) => e.stopPropagation()}
       style={{
-        height: "100%",
         width: "100%",
-        borderRadius: "10px",
-        overflow: "hidden",
+        height: "100%",
         position: "relative",
+        pointerEvents: "auto",
         zIndex: 10,
       }}
-      attributionControl={false}
     >
-      <TileLayer url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png" />
+      <MapContainer
+        center={[lat, lon]}
+        zoom={15}
+        scrollWheelZoom={true}
+        zoomControl={true}
+        style={{
+          height: "100%",
+          width: "100%",
+          borderRadius: "10px",
+          overflow: "hidden",
+          position: "relative",
+        }}
+        attributionControl={false}
+      >
+        <TileLayer url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png" />
 
-      {/* Main POI marker */}
-      <Marker position={[lat, lon]}>
-        <Popup>
-          <b>{popup}</b>
-        </Popup>
-      </Marker>
+        {/* Main POI marker */}
+        <Marker position={[lat, lon]}>
+          <Popup>
+            <b>{popup}</b>
+          </Popup>
+        </Marker>
 
-      {/* Optional user location (not routed) */}
-      {user && user.lat && user.lon && (
-        <CircleMarker
-          center={[user.lat, user.lon]}
-          radius={6}
-          color="#2563eb"
-          fillColor="#3b82f6"
-          fillOpacity={0.95}
-          weight={2}
-        >
-          <Tooltip direction="top" offset={[0, -8]} opacity={1} permanent={false}>
-            You are here
-          </Tooltip>
-        </CircleMarker>
-      )}
-
-      {/* Fit to bounds (full-day map) */}
-      {bounds && <FitToBounds bounds={bounds} />}
-
-      {/* Draw route segments with smooth, Google-like look */}
-      {routes.filter(Boolean).map((seg, i) => {
-        const isWalk = seg.mode === "walk";
-        return (
-          <Polyline
-            key={i}
-            positions={seg.latlngs}
-            pathOptions={{
-              color: isWalk ? "#22c55e" : "#fb923c",
-              weight: isWalk ? 3 : 5,
-              opacity: 0.95,
-              smoothFactor: 1.5,  // <- smooth, rounded feel
-              lineCap: "round",
-              lineJoin: "round",
-              dashArray: isWalk ? "6,10" : null, // dashed for walking
-            }}
+        {/* Optional user marker */}
+        {user && user.lat && user.lon && (
+          <CircleMarker
+            center={[user.lat, user.lon]}
+            radius={6}
+            color="#2563eb"
+            fillColor="#3b82f6"
+            fillOpacity={0.95}
+            weight={2}
           >
-            <Tooltip sticky>
-              {isWalk ? "🚶 Walking segment" : "🚕 Driving segment"}
+            <Tooltip direction="top" offset={[0, -8]} opacity={1}>
+              You are here
             </Tooltip>
-          </Polyline>
-        );
-      })}
+          </CircleMarker>
+        )}
 
-      {/* Animated rotating emoji marker following the full path */}
-      {animatedPath.length > 1 && (
-        <AnimatedEmoji path={animatedPath} mode={animMode === "walk" ? "walk" : "drive"} />
-      )}
-    </MapContainer>
+        {/* Fit bounds when provided */}
+        {bounds && <FitToBounds bounds={bounds} />}
+
+        {/* Route polylines */}
+        {routes.filter(Boolean).map((seg, i) => {
+          const isWalk = seg.mode === "walk";
+          return (
+            <Polyline
+              key={i}
+              positions={seg.latlngs}
+              pathOptions={{
+                color: isWalk ? "#22c55e" : "#fb923c",
+                weight: isWalk ? 3 : 5,
+                opacity: 0.95,
+                smoothFactor: 1.5,
+                lineCap: "round",
+                lineJoin: "round",
+                dashArray: isWalk ? "6,10" : undefined,
+              }}
+            >
+              <Tooltip sticky>
+                {isWalk ? "🚶 Walking segment" : "🚕 Driving segment"}
+              </Tooltip>
+            </Polyline>
+          );
+        })}
+
+        {/* Animated emoji following path */}
+        {animatedPath.length > 1 && (
+          <AnimatedEmoji path={animatedPath} mode={animMode === "walk" ? "walk" : "drive"} />
+        )}
+      </MapContainer>
+    </div>
   );
 }
 
-/* global styles for the emoji marker */
+/* ---------- Global styles ---------- */
 <style jsx global>{`
-  .emoji-marker { pointer-events: none; }
+  .emoji-marker {
+    pointer-events: none;
+  }
   .emoji-marker-inner {
     font-size: 20px;
     line-height: 20px;
     transform-origin: center center;
     will-change: transform;
-    text-shadow: 0 0 2px rgba(0,0,0,.25);
+    text-shadow: 0 0 2px rgba(0, 0, 0, 0.25);
+  }
+
+  /* ✅ Ensure Leaflet controls are always clickable */
+  .leaflet-control-zoom {
+    z-index: 10000 !important;
+    pointer-events: auto !important;
+  }
+  .leaflet-pane,
+  .leaflet-top,
+  .leaflet-bottom {
+    pointer-events: auto !important;
+  }
+  .leaflet-container {
+    touch-action: pan-x pan-y;
   }
 `}</style>

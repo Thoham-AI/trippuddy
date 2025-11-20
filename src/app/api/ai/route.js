@@ -1,59 +1,58 @@
 import OpenAI from "openai";
 
-const openai = new OpenAI({
+const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function POST(req) {
+  const { prompt, userLocation } = await req.json();
+
+  const systemPrompt = `
+You are TripPuddy AI, an expert travel planner.
+Generate a JSON itinerary array for 1–5 days based on the user’s request.
+Each day should have:
+- day number
+- list of activities (3–6 per day)
+Each activity must include:
+{
+  "time": "09:00 AM",
+  "title": "Visit Gardens by the Bay",
+  "details": "Explore the iconic Supertree Grove and Cloud Forest.",
+  "location": {
+    "name": "Gardens by the Bay",
+    "city": "Singapore",
+    "country": "SG",
+    "link": "https://goo.gl/maps/123"
+  },
+  "coordinates": { "lat": 1.2816, "lon": 103.8636 },
+  "image": "",
+  "weather": { "temp": 28, "description": "light rain", "link": "" },
+  "cost_estimate": "$20",
+  "travelTime": null
+}
+Return pure JSON under key "itinerary".
+`;
+
+  const completion = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.8,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const jsonText = completion.choices[0].message.content;
+  let parsed;
   try {
-    const { prompt } = await req.json();
-
-    // Gọi GPT sinh điểm đến
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // nhẹ và nhanh
-      messages: [
-        {
-          role: "user",
-          content: `
-Generate 3 travel destinations based on this prompt: "${prompt}".
-Return ONLY JSON array, each item has:
-- name
-- country
-- description
-- reason
-- image (use a generic Unsplash or Pexels image URL that fits)
-
-Example:
-[
-  {
-    "name": "Bali",
-    "country": "Indonesia",
-    "description": "Tropical paradise with beaches and temples",
-    "reason": "Perfect for relaxation and culture",
-    "image": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e"
+    parsed = JSON.parse(jsonText);
+  } catch (e) {
+    console.error("Bad JSON:", e, jsonText);
+    return new Response(JSON.stringify({ itinerary: [] }), { status: 200 });
   }
-]
-        `,
-        },
-      ],
-      temperature: 0.8,
-    });
 
-    let text = completion.choices[0].message.content.trim();
-
-    // Nếu GPT trả kèm text ngoài JSON → lọc JSON ra
-    const jsonMatch = text.match(/\[.*\]/s);
-    const destinations = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
-
-    return new Response(JSON.stringify({ destinations }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("OpenAI API Error:", error);
-    return new Response(JSON.stringify({ error: "Failed to generate destinations" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  return new Response(JSON.stringify(parsed), {
+    headers: { "Content-Type": "application/json" },
+  });
 }
