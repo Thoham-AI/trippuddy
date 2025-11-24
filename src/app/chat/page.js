@@ -1,7 +1,7 @@
-// src/app/chat/page.js
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import MicButton from "@/components/MicButton";
 
 async function getLocation() {
   return new Promise((resolve) => {
@@ -25,46 +25,17 @@ export default function ChatPage() {
   const [salutation, setSalutation] = useState("Boss");
   const [loading, setLoading] = useState(false);
 
-  /* -------------------------------------------
-     VOICE RECOGNITION (single clean instance)
-  --------------------------------------------*/
-  const [isListening, setIsListening] = useState(false);
-  let recognition;
+  const bottomRef = useRef(null);
 
-  if (typeof window !== "undefined") {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (SpeechRecognition) {
-      recognition = new SpeechRecognition();
-      recognition.lang = "en-US";
-      recognition.interimResults = false;
-      recognition.continuous = false;
-    }
-  }
-
-  const startListening = () => {
-    if (!recognition) {
-      alert("Voice recognition not supported in this browser.");
-      return;
-    }
-
-    setIsListening(true);
-    recognition.start();
-
-    recognition.onresult = (e) => {
-      const transcript = e.results[0][0].transcript;
-      setInput(transcript);
-      setIsListening(false);
-    };
-
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
+  const scrollDown = () => {
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 50);
   };
 
-  /* -------------------------------------------
-     LOAD SALUTATION FROM LOCALSTORAGE
-  --------------------------------------------*/
+  useEffect(scrollDown, [messages]);
+
+  /* LOAD SALUTATION */
   useEffect(() => {
     const saved = window.localStorage.getItem("tp_salutation");
     if (saved) setSalutation(saved);
@@ -75,9 +46,7 @@ export default function ChatPage() {
     window.localStorage.setItem("tp_salutation", value);
   };
 
-  /* -------------------------------------------
-     DAILY TOUR-GUIDE GREETING
-  --------------------------------------------*/
+  /* DAILY TOUR GUIDE GREETING */
   useEffect(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
     const last = window.localStorage.getItem("tp_last_welcome_date");
@@ -85,18 +54,17 @@ export default function ChatPage() {
 
     navigator.geolocation?.getCurrentPosition(
       async (pos) => {
-        await fetchTourGuideGreeting({
+        await greet({
           lat: pos.coords.latitude,
           lon: pos.coords.longitude,
         });
       },
       async () => {
-        await fetchTourGuideGreeting(null);
-      },
-      { enableHighAccuracy: true, timeout: 5000 }
+        await greet(null);
+      }
     );
 
-    async function fetchTourGuideGreeting(location) {
+    async function greet(location) {
       try {
         const res = await fetch("/api/tourguide", {
           method: "POST",
@@ -108,30 +76,24 @@ export default function ChatPage() {
           }),
         });
 
-        if (!res.ok) return;
         const data = await res.json();
 
         if (data.message) {
-          setMessages((prev) => [
-            ...prev,
-            { role: "assistant", content: data.message },
-          ]);
+          setMessages((m) => [...m, { role: "assistant", content: data.message }]);
           window.localStorage.setItem("tp_last_welcome_date", todayKey);
         }
-      } catch (err) {
-        console.error("Tourguide greeting error:", err);
-      }
+      } catch {}
     }
   }, [salutation]);
 
-  /* -------------------------------------------
-     SEND MESSAGE
-  --------------------------------------------*/
-  async function handleSend() {
-    if (!input.trim()) return;
+  /* SEND MESSAGE */
+  async function handleSend(forcedText) {
+    const text = forcedText ?? input;
+    if (!text.trim()) return;
 
-    const userMsg = input.trim();
-    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    const userMsg = text.trim();
+
+    setMessages((m) => [...m, { role: "user", content: userMsg }]);
     setInput("");
     setLoading(true);
 
@@ -148,24 +110,20 @@ export default function ChatPage() {
 
       const data = await res.json();
 
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.reply || "(no reply)" },
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", content: data.reply || "No reply." },
       ]);
-    } catch (err) {
-      console.error("Chat error:", err);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Sorry, I had trouble responding." },
+    } catch {
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", content: "Error. Try again." },
       ]);
-    } finally {
-      setLoading(false);
     }
+
+    setLoading(false);
   }
 
-  /* -------------------------------------------
-     RENDER UI
-  --------------------------------------------*/
   return (
     <div
       style={{
@@ -186,7 +144,7 @@ export default function ChatPage() {
           gap: 16,
         }}
       >
-        {/* Header */}
+        {/* HEADER */}
         <div
           style={{
             background: "#fff",
@@ -196,14 +154,13 @@ export default function ChatPage() {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            flexWrap: "wrap",
           }}
         >
-          <div style={{ fontSize: 20, fontWeight: 700 }}>
+          <div style={{ fontSize: 22, fontWeight: 700 }}>
             TripPuddy Chat Guide 💬
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span>How should I call you?</span>
             <select
               value={salutation}
@@ -222,7 +179,7 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Messages */}
+        {/* MESSAGES */}
         <div
           style={{
             minHeight: "300px",
@@ -260,15 +217,18 @@ export default function ChatPage() {
                     marginBottom: 4,
                   }}
                 >
-                  {m.role === "user" ? "You" : "TripPuddy"}
+                  {m.role === "user"
+                    ? "You"
+                    : "TripPuddy"}
                 </div>
                 {m.content}
               </div>
             </div>
           ))}
+          <div ref={bottomRef}></div>
         </div>
 
-        {/* Input row */}
+        {/* INPUT BAR */}
         <div
           style={{
             display: "flex",
@@ -285,7 +245,9 @@ export default function ChatPage() {
             placeholder="Speak or type your message…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !loading && handleSend()}
+            onKeyDown={(e) =>
+              e.key === "Enter" && !loading && handleSend()
+            }
             style={{
               flex: 1,
               padding: "10px 14px",
@@ -295,28 +257,10 @@ export default function ChatPage() {
             }}
           />
 
-          {/* Microphone */}
-          <button
-            onClick={startListening}
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: "50%",
-              background: isListening ? "#dc2626" : "#1e40af",
-              color: "white",
-              border: "none",
-              fontSize: 18,
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            🎤
-          </button>
+          <MicButton onTranscript={(t) => setInput(t)} />
 
-          {/* Send */}
           <button
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={loading}
             style={{
               background: loading ? "#9ca3af" : "#0d9488",

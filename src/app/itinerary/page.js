@@ -368,28 +368,66 @@ export default function DestinationsPage() {
 
   /* ----------------------- fetch itinerary ----------------------- */
 
+  
   const generate = async () => {
     if (!prompt.trim()) return;
+    if (!userLocation) {
+      alert("Location unavailable. Please enable GPS to generate itinerary.");
+      return;
+    }
+
     setLoading(true);
+
     try {
-      const res = await fetch("/api/destinations", {
+      const { lat, lon } = userLocation;
+
+      const res = await fetch("/api/itineraries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, userLocation }),
+        body: JSON.stringify({
+          location: { lat, lon },
+          startTime: "08:00",
+          durationHours: 4,
+          budgetLevel: "low",
+          vibe: "chill",
+          mealType: "breakfast",
+        }),
       });
 
       if (!res.ok) {
         setLoading(false);
-        alert("Server error: failed to generate itinerary.");
+        alert("Server error: itinerary generation failed.");
         return;
       }
 
       const json = await res.json();
+      const slots = json.itinerary?.slots || [];
 
-      // travel label within each day, guarded by coordinates
-      for (const day of json.itinerary || []) {
-        const acts = Array.isArray(day.activities) ? day.activities : [];
-        const promises = acts.map(async (a, i) => {
+      const activities = slots.map((slot) => ({
+        time: slot.time || "Flexible",
+        title: slot.placeName || slot.title || "Activity",
+        details: slot.description || "",
+        cost_estimate: slot.approxCostAUD
+          ? `Approx ${slot.approxCostAUD} AUD`
+          : "",
+        coordinates: slot.coordinates || null,
+        location: slot.location || {},
+        image: slot.image || null,
+        link: slot.link || null,
+        weather: slot.weather || null,
+        travelTime: null,
+      }));
+
+      const newItinerary = [
+        {
+          day: 1,
+          activities,
+        },
+      ];
+
+      for (const day of newItinerary) {
+        const acts = day.activities || [];
+        const tasks = acts.map(async (a, i) => {
           if (i === 0) {
             a.travelTime = null;
             return;
@@ -403,16 +441,15 @@ export default function DestinationsPage() {
           const route = await fetchRoute(prev, cur);
           a.travelTime = route.label;
         });
-        await Promise.all(promises);
+        await Promise.all(tasks);
       }
 
-      setData(json);
+      setData({ itinerary: newItinerary });
       setActiveDay(0);
       setShowRouteMap(false);
 
-      // precompute routes/totals for all days
-      await recomputeAll(json.itinerary || []);
-      // focus input for next query
+      await recomputeAll(newItinerary);
+
       setTimeout(() => inputRef.current?.focus(), 50);
     } catch (err) {
       console.error("Generate error:", err);
@@ -421,6 +458,7 @@ export default function DestinationsPage() {
       setLoading(false);
     }
   };
+
 
   /* ----------------------- recompute helpers ----------------------- */
 

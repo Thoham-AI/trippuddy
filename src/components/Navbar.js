@@ -1,15 +1,18 @@
 "use client";
+
 import Link from "next/link";
 import Image from "next/image";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [hasNotification, setHasNotification] = useState(false);
+  const router = useRouter();
 
-  // Simulate notifications (you will replace with real logic later)
+  // Fake notification (simulated)
   useEffect(() => {
-    setTimeout(() => setHasNotification(true), 4000); // 4 seconds → new alert
+    setTimeout(() => setHasNotification(true), 4000);
   }, []);
 
   return (
@@ -72,21 +75,28 @@ export default function Navbar() {
           gap: 28,
         }}
       >
-        {/* Home */}
-        <Link href="/" style={navLinkStyle}>Home</Link>
+        <Link href="/" style={navLinkStyle}>
+          Home
+        </Link>
 
-        {/* Itinerary */}
-        <Link href="/itinerary" style={navLinkStyle}>Itinerary</Link>
+        <Link href="/itinerary" style={navLinkStyle}>
+          Itinerary
+        </Link>
 
-        {/* About */}
-        <Link href="/about" style={navLinkStyle}>About</Link>
+        <Link href="/about" style={navLinkStyle}>
+          About
+        </Link>
 
-        {/* Contact */}
-        <Link href="/contact" style={navLinkStyle}>Contact</Link>
+        <Link href="/contact" style={navLinkStyle}>
+          Contact
+        </Link>
 
-        {/* 🔔 Notification Bell */}
+        {/* 🔔 Notification Bell → route to chat */}
         <div
-          onClick={() => setHasNotification(false)}
+          onClick={() => {
+            setHasNotification(false);
+            router.push("/chat");
+          }}
           style={{
             position: "relative",
             cursor: "pointer",
@@ -116,7 +126,6 @@ export default function Navbar() {
           )}
         </div>
 
-        {/* LOGIN — gradient pillow button */}
         <Link
           href="/login"
           style={{
@@ -135,17 +144,16 @@ export default function Navbar() {
         </Link>
       </div>
 
-      {/* Bell shake animation */}
+      {/* Bell Shake Animation */}
       <style>{`
         @keyframes shake {
           0% { transform: translateX(0); }
           25% { transform: translateX(-3px); }
           50% { transform: translateX(3px); }
-          75% { transform-box: fill-box; transform: translateX(-2px); }
+          75% { transform: translateX(-2px); }
           100% { transform: translateX(0); }
         }
       `}</style>
-
     </nav>
   );
 }
