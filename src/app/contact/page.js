@@ -13,7 +13,7 @@ export default function ContactPage() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    alert("Thank you for your message! We'll get back to you soon.");
+    alert("Thank you for your message! We&apos;ll get back to you soon.");
     setFormData({ name: "", email: "", subject: "", message: "" });
   };
 
