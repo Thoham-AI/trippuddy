@@ -25,15 +25,15 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="min-h-screen pt-16 bg-gradient-to-br from-purple-50 to-pink-100">
-      <div className="container mx-auto px-4 py-12">
-        {/* Header Section */}
-        <div className="text-center mb-16">
-          <h1 className="text-5xl font-bold text-gray-800 mb-6">Contact Us</h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Have questions or suggestions? We'd love to hear from you!
-          </p>
-        </div>
+<div className="min-h-screen pt-16 bg-gradient-to-br from-purple-50 to-pink-100">
+  <div className="container mx-auto px-4 py-12">
+    {/* Header Section */}
+    <div className="text-center mb-16">
+      <h1 className="text-5xl font-bold text-gray-800 mb-6">Contact Us</h1>
+      <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+        Have questions or suggestions? We&apos;d love to hear from you!
+      </p>
+    </div>
 
         <div className="grid lg:grid-cols-2 gap-12 max-w-6xl mx-auto">
           {/* Contact Information */}
