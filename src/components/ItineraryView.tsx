@@ -95,7 +95,7 @@ export default function ItineraryView({ itinerary }: { itinerary: ItineraryDay[]
                   </a>
                 )}
               </div>
-            ))}
+            ))}   {/* ✔ FIXED — properly closed map() and JSX */}
           </div>
         </div>
       ))}
