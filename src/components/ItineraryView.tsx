@@ -53,6 +53,7 @@ export default function ItineraryView({ itinerary }: { itinerary: ItineraryDay[]
                     <div className="font-semibold">{slot.time}</div>
                     <div className="text-lg font-bold">{slot.title}</div>
                   </div>
+
                   {slot.image && (
                     <img
                       src={slot.image}
@@ -95,7 +96,7 @@ export default function ItineraryView({ itinerary }: { itinerary: ItineraryDay[]
                   </a>
                 )}
               </div>
-            ))}   {/* ✔ FIXED — properly closed map() and JSX */}
+            ))} {/* ← fully correct closing of map() AND JSX */}
           </div>
         </div>
       ))}
