@@ -36,7 +36,7 @@ export default function ContactPage() {
     </div>
 
         <div className="grid lg:grid-cols-2 gap-12 max-w-6xl mx-auto">
-          {/* Contact Information */}
+          {/* Contact Information — section */}
           <div>
             <h2 className="text-3xl font-bold text-gray-800 mb-8">Get in Touch</h2>
             
