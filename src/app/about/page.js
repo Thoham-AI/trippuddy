@@ -21,7 +21,7 @@ export default function AboutPage() {
               create memories that last a lifetime.
             </p>
             <p className="text-lg text-gray-700 leading-relaxed">
-              Whether you're a seasoned traveler or planning your first adventure, TravelAI is here to 
+              Whether you`&apos;re a seasoned traveler or planning your first adventure, TravelAI is here to 
               make your journey smoother and more exciting.
             </p>
           </div>
@@ -72,7 +72,7 @@ export default function AboutPage() {
         <div className="text-center">
           <h2 className="text-3xl font-bold text-gray-800 mb-8">Our Team</h2>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto mb-8">
-            We're a passionate group of travelers, developers, and AI experts dedicated to 
+            We`&apos;re a passionate group of travelers, developers, and AI experts dedicated to 
             revolutionizing the way people explore the world.
           </p>
           <button className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors">

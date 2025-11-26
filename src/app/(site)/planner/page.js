@@ -62,7 +62,7 @@ export default function PlannerPage() {
         <p style={{ color: "#374151", marginBottom: "20px" }}>
           Describe your trip — for example:
           <br />
-          <em>"3 days in Hanoi with food and culture on a mid budget"</em>
+          <em>&ldquo 3 days in Hanoi with food and culture on a mid budget &rdquo</em>
         </p>
 
         <div style={{ display: "flex", gap: "10px", marginBottom: "24px" }}>
