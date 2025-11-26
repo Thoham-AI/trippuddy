@@ -59,10 +59,11 @@ export default function PlannerPage() {
         >
           🧭 Trip Planner
         </h1>
+
         <p style={{ color: "#374151", marginBottom: "20px" }}>
           Describe your trip — for example:
           <br />
-          <em>&ldquo 3 days in Hanoi with food and culture on a mid budget &rdquo</em>
+          <em>&ldquo;3 days in Hanoi with food and culture on a mid budget&rdquo;</em>
         </p>
 
         <div style={{ display: "flex", gap: "10px", marginBottom: "24px" }}>
@@ -125,7 +126,6 @@ export default function PlannerPage() {
                   <li>🌃 Evening: {day.eve}</li>
                 </ul>
 
-                {/* Optional small map */}
                 <div
                   style={{
                     height: "200px",

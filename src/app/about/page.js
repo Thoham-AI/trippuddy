@@ -21,10 +21,11 @@ export default function AboutPage() {
               create memories that last a lifetime.
             </p>
             <p className="text-lg text-gray-700 leading-relaxed">
-              Whether you`&apos;re a seasoned traveler or planning your first adventure, TravelAI is here to 
+              Whether you&apos;re a seasoned traveler or planning your first adventure, TravelAI is here to 
               make your journey smoother and more exciting.
             </p>
           </div>
+
           <div className="bg-white rounded-2xl p-8 shadow-xl">
             <div className="text-6xl text-center mb-6">🌎</div>
             <h3 className="text-2xl font-bold text-center text-gray-800 mb-4">Why Choose Us?</h3>
@@ -56,11 +57,13 @@ export default function AboutPage() {
             <h3 className="text-xl font-bold text-gray-800 mb-3">AI Technology</h3>
             <p className="text-gray-600">Advanced algorithms that understand your travel preferences</p>
           </div>
+
           <div className="bg-white rounded-xl p-6 text-center shadow-lg">
             <div className="text-4xl mb-4">⚡</div>
             <h3 className="text-xl font-bold text-gray-800 mb-3">Fast Planning</h3>
             <p className="text-gray-600">Plan your perfect trip in minutes, not hours</p>
           </div>
+
           <div className="bg-white rounded-xl p-6 text-center shadow-lg">
             <div className="text-4xl mb-4">🌟</div>
             <h3 className="text-xl font-bold text-gray-800 mb-3">Quality Content</h3>
@@ -72,9 +75,10 @@ export default function AboutPage() {
         <div className="text-center">
           <h2 className="text-3xl font-bold text-gray-800 mb-8">Our Team</h2>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto mb-8">
-            We`&apos;re a passionate group of travelers, developers, and AI experts dedicated to 
+            We&apos;re a passionate group of travelers, developers, and AI experts dedicated to 
             revolutionizing the way people explore the world.
           </p>
+
           <button className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors">
             Join Our Community
           </button>
