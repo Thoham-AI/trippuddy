@@ -38,7 +38,10 @@ export default function Chat() {
     setLoading(true)
     setSaved(false)
 
-    const newMessages = [...messages, { role: 'user', content: input }]
+    // 🔥 FIXED SECTION — TypeScript safe
+    const newMessage: Message = { role: 'user', content: input }
+    const newMessages: Message[] = [...messages, newMessage]
+
     setMessages(newMessages)
     setInput('')
 
@@ -58,18 +61,23 @@ export default function Chat() {
       const data = await res.json()
       console.log('📦 Chat data:', data)
 
-      setMessages([
-        ...newMessages,
-        { role: 'assistant', content: data.reply || 'Let’s plan something amazing ✈️' },
-      ])
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: data.reply || 'Let’s plan something amazing ✈️',
+      }
+
+      setMessages([...newMessages, assistantMessage])
       setDestinations(Array.isArray(data.destinations) ? data.destinations : [])
     } catch (err: any) {
       console.error('❌ Chat error:', err)
       setError('Failed to fetch response from /api/chat.')
-      setMessages([
-        ...newMessages,
-        { role: 'assistant', content: '⚠️ Sorry, something went wrong. Try again later.' },
-      ])
+
+      const assistantError: Message = {
+        role: 'assistant',
+        content: '⚠️ Sorry, something went wrong. Try again later.',
+      }
+
+      setMessages([...newMessages, assistantError])
     } finally {
       setLoading(false)
     }
