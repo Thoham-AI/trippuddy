@@ -39,7 +39,10 @@ export default function Chat() {
     setSaved(false)
 
     // 🔥 FIXED SECTION — TypeScript safe
-    const newMessage: Message = { role: 'user', content: input }
+const newMessages: Message[] = [
+  ...messages,
+  { role: 'user', content: input } as Message,
+]
     const newMessages: Message[] = [...messages, newMessage]
 
     setMessages(newMessages)
