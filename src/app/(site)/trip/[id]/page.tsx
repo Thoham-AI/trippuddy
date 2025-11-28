@@ -1,3 +1,5 @@
+"use client";
+
 export default function TripDetailPage({ params }) {
   const { id } = params
   return (
