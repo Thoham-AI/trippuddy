@@ -5,7 +5,11 @@ import TripCard from './TripCard'
 import { saveTrip, getTrips } from '@/lib/storage'
 import { v4 as uuidv4 } from 'uuid'
 
-type Message = { role: 'user' | 'assistant'; content: string }
+export type Message = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
 type Destination = { name: string; country?: string; reason?: string; image?: string }
 
 export default function Chat() {
@@ -34,22 +38,22 @@ export default function Chat() {
   async function sendMessage(e: FormEvent) {
     e.preventDefault()
     if (!input.trim()) return
+
     setError(null)
     setLoading(true)
     setSaved(false)
 
-    // 🔥 FIXED SECTION — TypeScript safe
-const newMessages: Message[] = [
-  ...messages,
-  { role: 'user', content: input } as Message,
-]
-    const newMessages: Message[] = [...messages, newMessage]
+    // ✅ FIXED: Always create Message with correct literal types
+    const userMessage: Message = { role: 'user', content: input }
+
+    const newMessages: Message[] = [...messages, userMessage]
 
     setMessages(newMessages)
     setInput('')
 
     try {
       console.log('➡️ Sending to /api/chat ...')
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -61,16 +65,19 @@ const newMessages: Message[] = [
 
       console.log('⬅️ Response:', res.status)
       if (!res.ok) throw new Error(`API ${res.status}`)
+
       const data = await res.json()
       console.log('📦 Chat data:', data)
 
+      // ✅ FIXED: Assistant message strongly typed
       const assistantMessage: Message = {
         role: 'assistant',
-        content: data.reply || 'Let’s plan something amazing ✈️',
+        content: data.reply || 'Let’s plan something amazing ✈️'
       }
 
       setMessages([...newMessages, assistantMessage])
       setDestinations(Array.isArray(data.destinations) ? data.destinations : [])
+
     } catch (err: any) {
       console.error('❌ Chat error:', err)
       setError('Failed to fetch response from /api/chat.')
@@ -89,6 +96,7 @@ const newMessages: Message[] = [
   function handleSaveTrip() {
     try {
       if (!destinations.length) return
+
       const newTrip = {
         id: uuidv4(),
         destination: destinations[0].name || 'Unnamed trip',
@@ -99,10 +107,12 @@ const newMessages: Message[] = [
           { day: 3, am: 'Relax & shopping', pm: 'Local market', eve: 'Return home' },
         ],
       }
+
       console.log('💾 Saving trip:', newTrip)
       saveTrip?.(newTrip)
       setSavedTrips((prev) => [...prev, newTrip])
       setSaved(true)
+
     } catch (err) {
       console.error('❌ Save trip error:', err)
       setError('Unable to save this trip.')
@@ -146,7 +156,11 @@ const newMessages: Message[] = [
             </div>
           ))}
 
-          {loading && <div className="text-gray-400 italic animate-pulse">TripPuddy is thinking...</div>}
+          {loading && (
+            <div className="text-gray-400 italic animate-pulse">
+              TripPuddy is thinking...
+            </div>
+          )}
 
           {destinations.length > 0 && (
             <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 justify-center">

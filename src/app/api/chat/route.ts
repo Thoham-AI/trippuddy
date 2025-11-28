@@ -1,18 +1,12 @@
 import { NextResponse } from "next/server";
 
-type ChatRequest = {
-  message?: string;
-  salutation?: string;
-  location?: { lat: number; lon: number } | null;
-};
-
-export async function POST(req: Request) {
+export async function POST(req) {
   try {
-    let body: ChatRequest = {};
+    let body = {};
 
     // SAFELY PARSE BODY
     try {
-      body = (await req.json()) as ChatRequest;
+      body = await req.json();
     } catch {
       body = {};
     }
@@ -36,7 +30,7 @@ export async function POST(req: Request) {
     const prettySalutation = salutation?.trim() || "friend";
 
     // Normalize Vietnamese accents
-    const normalize = (str: string) =>
+    const normalize = (str) =>
       str
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
@@ -54,12 +48,12 @@ export async function POST(req: Request) {
       locationHint = " around your current area (based on your location).";
     }
 
-    let reply: string | undefined;
+    let reply;
 
     // GREETINGS (English + Vietnamese, accent-free)
     if (
       /^(hi|hello|hey|yo)/.test(norm) ||
-      norm.startsWith("chao") ||
+      norm.startsWith("chao") || // "chào", "chao", "chao ban"
       norm.startsWith("xin chao") ||
       norm.includes("how are you")
     ) {
