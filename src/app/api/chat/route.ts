@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 
+// ✅ Added minimal type so TS stops complaining
+type ChatRequestBody = {
+  message?: string;
+  salutation?: string;
+  location?: { lat: number; lon: number } | null;
+};
+
 export async function POST(req) {
   try {
-    let body = {};
+    // ❗ FIX: give body the correct type instead of {}
+    let body: ChatRequestBody = {};
 
     // SAFELY PARSE BODY
     try {
