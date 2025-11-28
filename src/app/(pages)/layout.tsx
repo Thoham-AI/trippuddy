@@ -1,5 +1,5 @@
 "use client";
 
-export default function SiteLayout({ children }) {
+export default function PagesLayout({ children }) {
   return <>{children}</>;
 }
