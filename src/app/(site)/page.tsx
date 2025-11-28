@@ -1,4 +1,5 @@
-'use client'
+"use client";
+
 import { useRouter } from 'next/navigation'
 import MoodChips from '@/components/MoodChips'
 
