@@ -1,5 +1,29 @@
 import { NextResponse } from "next/server";
 
+// ---- GOOGLE PLACES PHOTO LOOKUP ----
+// ---- GOOGLE PLACES PHOTO LOOKUP (Single Correct Version) ----
+async function fetchGooglePlacePhoto(title, apiKey) {
+  try {
+    // Use Text Search because it returns real Places
+    const searchUrl =
+      `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(title)}&key=${apiKey}`;
+
+    const res = await fetch(searchUrl);
+    const json = await res.json();
+
+    const place = json.results?.[0];
+    if (!place) return null;
+
+    const photo = place.photos?.[0];
+    if (!photo) return null;
+
+    return photo.photo_reference;
+  } catch (err) {
+    console.error("Google Places search failed:", err);
+    return null;
+  }
+}
+
 // Load OpenAI Edge client (new API)
 import OpenAI from "openai";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -93,12 +117,30 @@ User weather: ${weather ? JSON.stringify(weather) : "unknown"}
       );
     }
 
-    // Add images to each activity
-    for (const day of itinerary.days || []) {
-      for (const act of day.activities || []) {
-        act.image = await generateImage(act.title);
+// Add photos to each activity (Google Places first, fallback to DALLE)
+const googleKey = process.env.GOOGLE_PLACES_API_KEY;
+
+for (const day of itinerary.days || []) {
+  for (const act of day.activities || []) {
+    let photoRef = null;
+
+    // 1) Try Google Places Photo
+    if (googleKey && act.title) {
+      try {
+        photoRef = await fetchGooglePlacePhoto(act.title, googleKey);
+      } catch (err) {
+        console.error("Google Places error:", err);
       }
     }
+
+    if (photoRef) {
+      act.image = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photoreference=${photoRef}&key=${googleKey}`;
+    } else {
+      // 2) Fallback: GPT-generated image
+      act.image = await generateImage(act.title);
+    }
+  }
+}
 
 // 🔍 DEBUG: print the entire itinerary structure
 console.log("FULL API RESPONSE:", JSON.stringify({ itinerary, weather, userLocation }, null, 2));

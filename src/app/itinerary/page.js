@@ -426,96 +426,93 @@ useEffect(() => {
 
       let activities = [];
 
-      // ✅ Preferred: new backend shape -> [{ day, activities }]
-      if (Array.isArray(json.itinerary) && json.itinerary.length > 0) {
-        const apiActivities = json.itinerary[0].activities || [];
-
-        activities = apiActivities.map((a) => ({
-          time: a.time || "Flexible",
-          title: a.title || a.placeName || "Activity",
-          details: a.details || a.description || "",
-          cost_estimate:
-            a.cost_estimate ||
-            (a.approxCostAUD ? `Approx ${a.approxCostAUD} AUD` : ""),
-          coordinates: a.coordinates || a.coords || null,
-          location: a.location || {},
-          image: a.image || null,
-          link: a.link || null,
-          weather: a.weather || null,
-          // backend may already set this, otherwise keep null
-          travelTime: a.travelTime ?? null,
-        }));
-      } // 2️⃣ NEW BLOCK — supports backend shape: { itinerary: { itinerary: { activities: [...] }}}
-else if (json.itinerary?.itinerary?.activities) {
+// Preferred new array backend
+// NEW BACKEND SHAPE: itinerary.itinerary.activities (object → array)
+if (Array.isArray(json.itinerary?.itinerary?.activities)) {
   const apiActivities = json.itinerary.itinerary.activities;
 
   activities = apiActivities.map((a) => ({
-    time: a.time || "Flexible",
+    time: a.time_of_day || "Flexible",
     title: a.title || "Activity",
     details: a.description || "",
-    cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
+    cost_estimate: a.estimated_cost
+      ? `Approx ${a.estimated_cost} AUD`
+      : "",
+
     coordinates: { lat: a.latitude, lon: a.longitude },
     location: { name: a.title, country: "AU" },
-    image: null,
-    link: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-      a.google_maps_query || a.title
-    )}`,
-    weather: null,
+
+// Google Places Photo (if available)
+image: a.photo_reference
+  ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${a.photo_reference}&key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}`
+  : `/fallback.jpg`,
+
+    // weather normalized to your UI
+    weather: json.weather || null,
+    weatherTemp: json.weather?.main?.temp ?? null,
+    weatherDesc: json.weather?.weather?.[0]?.description ?? null,
+    weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
+
     travelTime: null,
   }));
 }
+
+// Fallback for legacy formats
 else {
-        // 🔙 Fallback: old shape -> { itinerary: { slots: [...] } } or { slots: [...] }
-        const slots = json.itinerary?.slots || json.slots || [];
+  const slots = json.itinerary?.slots || json.slots || [];
 
-        activities = slots.map((slot) => ({
-          time: slot.time || "Flexible",
-          title: slot.placeName || slot.title || "Activity",
-          details: slot.description || "",
-          cost_estimate: slot.approxCostAUD
-            ? `Approx ${slot.approxCostAUD} AUD`
-            : "",
-          coordinates: slot.coordinates || null,
-          location: slot.location || {},
-          image: slot.image || null,
-          link: slot.link || null,
-          weather: slot.weather || null,
-          travelTime: null,
-        }));
-      }
+  activities = slots.map((slot) => ({
+    time: slot.time || "Flexible",
+    title: slot.placeName || slot.title || "Activity",
+    details: slot.description || "",
+    cost_estimate: slot.approxCostAUD
+      ? `Approx ${slot.approxCostAUD} AUD`
+      : "",
+    coordinates: slot.coordinates || null,
+    location: slot.location || {},
+    image: slot.image || null,
+    link: slot.link || null,
+    weather: slot.weather || null,
+    travelTime: null,
+  }));
+}
 
+// Build final itinerary structure
+const newItinerary = [
+  {
+    day: 1,
+    activities,
+  },
+];
 
-      const newItinerary = [
-        {
-          day: 1,
-          activities,
-        },
-      ];
+// Compute travel times
+for (const day of newItinerary) {
+  const acts = day.activities || [];
+  const tasks = acts.map(async (a, i) => {
+    if (i === 0) {
+      a.travelTime = null;
+      return;
+    }
+    const prev = acts[i - 1]?.coordinates;
+    const cur = a.coordinates;
+    if (!prev || !cur) {
+      a.travelTime = null;
+      return;
+    }
+    const route = await fetchRoute(prev, cur);
+    a.travelTime = route.label;
+  });
+  await Promise.all(tasks);
+}
 
-      for (const day of newItinerary) {
-        const acts = day.activities || [];
-        const tasks = acts.map(async (a, i) => {
-          if (i === 0) {
-            a.travelTime = null;
-            return;
-          }
-          const prev = acts[i - 1]?.coordinates;
-          const cur = a.coordinates;
-          if (!prev || !cur) {
-            a.travelTime = null;
-            return;
-          }
-          const route = await fetchRoute(prev, cur);
-          a.travelTime = route.label;
-        });
-        await Promise.all(tasks);
-      }
+// Push to state
+setData({ itinerary: newItinerary });
+setActiveDay(0);
+setShowRouteMap(false);
+await recomputeAll(newItinerary);
 
-      setData({ itinerary: newItinerary });
-      setActiveDay(0);
-      setShowRouteMap(false);
-
-      await recomputeAll(newItinerary);
+// Restore focus
+setTimeout(() => inputRef.current?.focus(), 50);
 
       setTimeout(() => inputRef.current?.focus(), 50);
     } catch (err) {
@@ -703,7 +700,6 @@ else {
     Your TripPuddy Itinerary Planner 🗺️
   </div>
 </div>
-
 
       <div style={{ maxWidth: 1120, margin: "20px auto", padding: "0 16px" }}>
         {/* Query box */}
@@ -938,23 +934,28 @@ else {
                               )}
                             </div>
 
-                            {w && (
-                              <a
-                                href={w.link}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="weather"
-                                style={{
-                                  display: "inline-block",
-                                  marginTop: 6,
-                                  color: "#0ea5e9",
-                                  textDecoration: "none",
-                                  fontWeight: 700,
-                                }}
-                              >
-                                🌤 {w.temp}°C — {w.description}
-                              </a>
-                            )}
+{act.weatherTemp !== null && (
+  <div
+    className="weather"
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginTop: 6,
+      color: "#0ea5e9",
+      fontWeight: 700,
+    }}
+  >
+    <img
+      src={`https://openweathermap.org/img/wn/${act.weatherIcon}@2x.png`}
+      alt="weather icon"
+      style={{ width: 32, height: 32 }}
+    />
+    <span>
+      {Math.round(act.weatherTemp)}°C — {act.weatherDesc}
+    </span>
+  </div>
+)}
 
                             {act.details && (
                               <div className="details" style={{ marginTop: 8, color: "#374151" }}>
@@ -1011,24 +1012,22 @@ else {
                               </div>
                             )}
 
-                            {act.image && (
-                              <img
-                                src={act.image}
-                                alt=""
-                                onClick={() => setPopupImage(act.image)}
-                                onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
-                                className="thumb"
-                                style={{
-                                  width: "100%",
-                                  height: 135,
-                                  objectFit: "cover",
-                                  borderRadius: 10,
-                                  cursor: "zoom-in",
-                                  background: "#f9fafb",
-                                  outline: "1px solid #f0f2f6",
-                                }}
-                              />
-                            )}
+<img
+  src={act.image}
+  alt={act.title}
+  onClick={() => setPopupImage(act.image)}
+  onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
+  className="thumb"
+  style={{
+    width: "100%",
+    height: 135,
+    objectFit: "cover",
+    borderRadius: 10,
+    cursor: "zoom-in",
+    background: "#f9fafb",
+    outline: "1px solid #f0f2f6",
+  }}
+/>
                           </div>
                         </div>
                       </SortableActivity>
