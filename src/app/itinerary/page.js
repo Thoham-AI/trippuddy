@@ -350,21 +350,48 @@ export default function DestinationsPage() {
   const inputRef = useRef(null);
 
   // Safe geolocation sampling (don’t use if too inaccurate)
-  useEffect(() => {
-    if (!navigator.geolocation) return;
+useEffect(() => {
+  async function detectLocation() {
+    // 1. Try browser GPS first
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords || {};
-        if (!latitude || !longitude || !accuracy || accuracy > 1000) {
-          setUserLocation(null);
-          return;
-        }
+        const { latitude, longitude } = pos.coords;
+
+        console.log("GPS location:", latitude, longitude);
         setUserLocation({ lat: latitude, lon: longitude });
       },
-      () => setUserLocation(null),
-      { enableHighAccuracy: true, maximumAge: 15000, timeout: 8000 }
+      async (err) => {
+        console.warn("GPS failed:", err.message);
+
+        // 2. Fallback → IP-based location
+        try {
+          const res = await fetch("https://ipapi.co/json/");
+          const json = await res.json();
+
+          if (json.latitude && json.longitude) {
+            console.log("Using IP geolocation:", json);
+            setUserLocation({ lat: json.latitude, lon: json.longitude });
+          } else {
+            throw new Error("No IP location data");
+          }
+        } catch (ipErr) {
+          console.error("IP geolocation failed:", ipErr);
+
+          // 3. Final fallback → center of Australia
+          setUserLocation({ lat: -25.2744, lon: 133.7751 });
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 4000,
+        maximumAge: 5000,
+      }
     );
-  }, []);
+  }
+
+  detectLocation();
+}, []);
+
 
   /* ----------------------- fetch itinerary ----------------------- */
 
@@ -372,8 +399,7 @@ export default function DestinationsPage() {
   const generate = async () => {
     if (!prompt.trim()) return;
     if (!userLocation) {
-      alert("Location unavailable. Please enable GPS to generate itinerary.");
-      return;
+      console.log("Location not ready yet — using fallback if needed.");
     }
 
     setLoading(true);
@@ -384,14 +410,10 @@ export default function DestinationsPage() {
       const res = await fetch("/api/itineraries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          location: { lat, lon },
-          startTime: "08:00",
-          durationHours: 4,
-          budgetLevel: "low",
-          vibe: "chill",
-          mealType: "breakfast",
-        }),
+	body: JSON.stringify({
+ 	userPrompt: prompt,     // <-- send user's real query!
+ 	userLocation: { lat, lon },  // <-- real detected location
+	}),
       });
 
       if (!res.ok) {
@@ -400,23 +422,68 @@ export default function DestinationsPage() {
         return;
       }
 
-      const json = await res.json();
-      const slots = json.itinerary?.slots || [];
+            const json = await res.json();
 
-      const activities = slots.map((slot) => ({
-        time: slot.time || "Flexible",
-        title: slot.placeName || slot.title || "Activity",
-        details: slot.description || "",
-        cost_estimate: slot.approxCostAUD
-          ? `Approx ${slot.approxCostAUD} AUD`
-          : "",
-        coordinates: slot.coordinates || null,
-        location: slot.location || {},
-        image: slot.image || null,
-        link: slot.link || null,
-        weather: slot.weather || null,
-        travelTime: null,
-      }));
+      let activities = [];
+
+      // ✅ Preferred: new backend shape -> [{ day, activities }]
+      if (Array.isArray(json.itinerary) && json.itinerary.length > 0) {
+        const apiActivities = json.itinerary[0].activities || [];
+
+        activities = apiActivities.map((a) => ({
+          time: a.time || "Flexible",
+          title: a.title || a.placeName || "Activity",
+          details: a.details || a.description || "",
+          cost_estimate:
+            a.cost_estimate ||
+            (a.approxCostAUD ? `Approx ${a.approxCostAUD} AUD` : ""),
+          coordinates: a.coordinates || a.coords || null,
+          location: a.location || {},
+          image: a.image || null,
+          link: a.link || null,
+          weather: a.weather || null,
+          // backend may already set this, otherwise keep null
+          travelTime: a.travelTime ?? null,
+        }));
+      } // 2️⃣ NEW BLOCK — supports backend shape: { itinerary: { itinerary: { activities: [...] }}}
+else if (json.itinerary?.itinerary?.activities) {
+  const apiActivities = json.itinerary.itinerary.activities;
+
+  activities = apiActivities.map((a) => ({
+    time: a.time || "Flexible",
+    title: a.title || "Activity",
+    details: a.description || "",
+    cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
+    coordinates: { lat: a.latitude, lon: a.longitude },
+    location: { name: a.title, country: "AU" },
+    image: null,
+    link: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      a.google_maps_query || a.title
+    )}`,
+    weather: null,
+    travelTime: null,
+  }));
+}
+else {
+        // 🔙 Fallback: old shape -> { itinerary: { slots: [...] } } or { slots: [...] }
+        const slots = json.itinerary?.slots || json.slots || [];
+
+        activities = slots.map((slot) => ({
+          time: slot.time || "Flexible",
+          title: slot.placeName || slot.title || "Activity",
+          details: slot.description || "",
+          cost_estimate: slot.approxCostAUD
+            ? `Approx ${slot.approxCostAUD} AUD`
+            : "",
+          coordinates: slot.coordinates || null,
+          location: slot.location || {},
+          image: slot.image || null,
+          link: slot.link || null,
+          weather: slot.weather || null,
+          travelTime: null,
+        }));
+      }
+
 
       const newItinerary = [
         {
@@ -597,7 +664,7 @@ export default function DestinationsPage() {
 {/* Banner / hero */}
 <div style={{ 
   width: "100%", 
-  height: 240, 
+  height: 140, 
   overflow: "hidden", 
   position: "relative",
   marginTop: "-2px"

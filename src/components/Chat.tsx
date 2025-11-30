@@ -4,6 +4,7 @@ import { useState, useEffect, FormEvent } from 'react'
 import TripCard from './TripCard'
 import { saveTrip, getTrips } from '@/lib/storage'
 import { v4 as uuidv4 } from 'uuid'
+import MicButton from './MicButton'   // ⭐ ADDED
 
 export type Message = {
   role: 'user' | 'assistant';
@@ -35,17 +36,28 @@ export default function Chat() {
     }
   }, [])
 
-  async function sendMessage(e: FormEvent) {
+  // ⭐ New helper: send voice message directly
+  function sendMessageFromVoice(text: string) {
+    if (!text.trim()) return
+    setInput(text)
+
+    // Simulate form submit
+    const fakeEvent = { preventDefault: () => {} } as FormEvent
+    sendMessage(fakeEvent, text)
+  }
+
+  // ⭐ Updated sendMessage supports voice input
+  async function sendMessage(e: FormEvent, voiceInput?: string) {
     e.preventDefault()
-    if (!input.trim()) return
+
+    const textToSend = voiceInput || input
+    if (!textToSend.trim()) return
 
     setError(null)
     setLoading(true)
     setSaved(false)
 
-    // ✅ FIXED: Always create Message with correct literal types
-    const userMessage: Message = { role: 'user', content: input }
-
+    const userMessage: Message = { role: 'user', content: textToSend }
     const newMessages: Message[] = [...messages, userMessage]
 
     setMessages(newMessages)
@@ -69,7 +81,6 @@ export default function Chat() {
       const data = await res.json()
       console.log('📦 Chat data:', data)
 
-      // ✅ FIXED: Assistant message strongly typed
       const assistantMessage: Message = {
         role: 'assistant',
         content: data.reply || 'Let’s plan something amazing ✈️'
@@ -173,7 +184,9 @@ export default function Chat() {
 
         {/* Footer */}
         <div className="p-3 border-t flex flex-col gap-2 bg-gray-50 rounded-b-xl">
-          <form onSubmit={sendMessage} className="flex gap-2">
+          <form onSubmit={sendMessage} className="flex gap-2 items-center">
+
+            {/* ⭐ INPUT BOX */}
             <input
               type="text"
               placeholder="Ask TripPuddy about your next trip..."
@@ -181,6 +194,11 @@ export default function Chat() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
             />
+
+            {/* ⭐ MIC BUTTON */}
+            <MicButton onResult={sendMessageFromVoice} />
+
+            {/* SEND BUTTON */}
             <button
               type="submit"
               disabled={loading}

@@ -30,7 +30,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@tailwindcss/postcss": "^4.1.13",
+    "@tailwindcss/postcss": "^4.1.17",
     "@types/react": "19.2.2",
     "autoprefixer": "^10.4.21",
     "eslint": "^9",

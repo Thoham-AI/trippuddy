@@ -1,85 +1,60 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
-export default function MicButton({ onTranscript }) {
-  const recognitionRef = useRef(null);
-  const startingRef = useRef(false);
+export default function MicButton({ onResult }) {
   const [listening, setListening] = useState(false);
+  const recognitionRef = useRef(null);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
+    // Chrome, Edge, Android
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    if (!SpeechRecognition) return;
+    if (!SpeechRecognition) {
+      console.warn("Speech recognition not supported in this browser.");
+      return;
+    }
 
-    const recog = new SpeechRecognition();
-    recog.lang = "en-US"; // change to "vi-VN" for Vietnamese
-    recog.interimResults = false;
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = false;
 
-    recog.onstart = () => setListening(true);
-    recog.onend = () => {
+    recognition.onstart = () => setListening(true);
+
+    recognition.onend = () => setListening(false);
+
+    recognition.onerror = (err) => {
+      console.error("Speech recognition error:", err);
       setListening(false);
-      startingRef.current = false;
     };
 
-    recog.onresult = (e) => {
-      const transcript = e.results[0][0].transcript;
-      onTranscript(transcript);
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      onResult(transcript);
     };
 
-    recog.onerror = () => {
-      setListening(false);
-      startingRef.current = false;
-    };
+    recognitionRef.current = recognition;
+  }, [onResult]);
 
-    recognitionRef.current = recog;
-  }, [onTranscript]);
+  const handleClick = () => {
+    if (!recognitionRef.current) return;
 
-  const toggleMic = () => {
-    const recog = recognitionRef.current;
-    if (!recog) return;
-
-    // Prevent invalid-state spam
-    if (startingRef.current) return;
-
-    startingRef.current = true;
-
-    if (!listening) {
-      try {
-        recog.start();
-      } catch {
-        setTimeout(() => recog.start(), 300);
-      }
+    if (listening) {
+      recognitionRef.current.stop();
     } else {
-      try {
-        recog.stop();
-      } catch {}
+      recognitionRef.current.start();
     }
   };
 
   return (
     <button
-      onClick={toggleMic}
-      style={{
-        width: 48,
-        height: 48,
-        borderRadius: "50%",
-        background: listening ? "#dc2626" : "#1e40af",
-        color: "white",
-        border: "none",
-        fontSize: 20,
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        cursor: "pointer",
-        boxShadow: listening
-          ? "0 0 12px rgba(220,38,38,0.6)"
-          : "0 0 8px rgba(0,0,0,0.2)",
-        transition: "0.25s ease",
-      }}
+      onClick={handleClick}
+      className={`p-3 rounded-full shadow-lg border transition ${
+        listening ? "bg-red-500 text-white" : "bg-white text-black"
+      }`}
+      title={listening ? "Listening…" : "Start voice input"}
     >
       🎤
     </button>
