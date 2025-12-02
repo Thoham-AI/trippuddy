@@ -350,52 +350,50 @@ export default function DestinationsPage() {
   const inputRef = useRef(null);
 
   // Safe geolocation sampling (don’t use if too inaccurate)
-useEffect(() => {
-  async function detectLocation() {
-    // 1. Try browser GPS first
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
+  useEffect(() => {
+    async function detectLocation() {
+      // 1. Try browser GPS first
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
 
-        console.log("GPS location:", latitude, longitude);
-        setUserLocation({ lat: latitude, lon: longitude });
-      },
-      async (err) => {
-        console.warn("GPS failed:", err.message);
+          console.log("GPS location:", latitude, longitude);
+          setUserLocation({ lat: latitude, lon: longitude });
+        },
+        async (err) => {
+          console.warn("GPS failed:", err.message);
 
-        // 2. Fallback → IP-based location
-        try {
-          const res = await fetch("https://ipapi.co/json/");
-          const json = await res.json();
+          // 2. Fallback → IP-based location
+          try {
+            const res = await fetch("https://ipapi.co/json/");
+            const json = await res.json();
 
-          if (json.latitude && json.longitude) {
-            console.log("Using IP geolocation:", json);
-            setUserLocation({ lat: json.latitude, lon: json.longitude });
-          } else {
-            throw new Error("No IP location data");
+            if (json.latitude && json.longitude) {
+              console.log("Using IP geolocation:", json);
+              setUserLocation({ lat: json.latitude, lon: json.longitude });
+            } else {
+              throw new Error("No IP location data");
+            }
+          } catch (ipErr) {
+            console.error("IP geolocation failed:", ipErr);
+
+            // 3. Final fallback → center of Australia
+            setUserLocation({ lat: -25.2744, lon: 133.7751 });
           }
-        } catch (ipErr) {
-          console.error("IP geolocation failed:", ipErr);
-
-          // 3. Final fallback → center of Australia
-          setUserLocation({ lat: -25.2744, lon: 133.7751 });
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 4000,
+          maximumAge: 5000,
         }
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 4000,
-        maximumAge: 5000,
-      }
-    );
-  }
+      );
+    }
 
-  detectLocation();
-}, []);
-
+    detectLocation();
+  }, []);
 
   /* ----------------------- fetch itinerary ----------------------- */
 
-  
   const generate = async () => {
     if (!prompt.trim()) return;
     if (!userLocation) {
@@ -405,15 +403,15 @@ useEffect(() => {
     setLoading(true);
 
     try {
-      const { lat, lon } = userLocation;
+      const { lat, lon } = userLocation || { lat: null, lon: null };
 
       const res = await fetch("/api/itineraries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-	body: JSON.stringify({
- 	userPrompt: prompt,     // <-- send user's real query!
- 	userLocation: { lat, lon },  // <-- real detected location
-	}),
+        body: JSON.stringify({
+          userPrompt: prompt, // <-- send user's real query!
+          userLocation: { lat, lon }, // <-- real detected location
+        }),
       });
 
       if (!res.ok) {
@@ -422,97 +420,151 @@ useEffect(() => {
         return;
       }
 
-            const json = await res.json();
+      const json = await res.json();
 
       let activities = [];
 
-// Preferred new array backend
-// NEW BACKEND SHAPE: itinerary.itinerary.activities (object → array)
-if (Array.isArray(json.itinerary?.itinerary?.activities)) {
-  const apiActivities = json.itinerary.itinerary.activities;
+      // Preferred new array backend
+      if (Array.isArray(json.itinerary) && json.itinerary.length > 0) {
+        const apiActivities = json.itinerary[0].activities || [];
 
-  activities = apiActivities.map((a) => ({
-    time: a.time_of_day || "Flexible",
-    title: a.title || "Activity",
-    details: a.description || "",
-    cost_estimate: a.estimated_cost
-      ? `Approx ${a.estimated_cost} AUD`
-      : "",
+        activities = apiActivities.map((a) => ({
+          time: a.time || "Flexible",
+          title: a.title || a.placeName || "Activity",
+          details: a.details || a.description || "",
+          cost_estimate:
+            a.cost_estimate ||
+            (a.approxCostAUD ? `Approx ${a.approxCostAUD} AUD` : ""),
+          coordinates:
+            a.coordinates ||
+            a.coords ||
+            (a.latitude && a.longitude
+              ? { lat: a.latitude, lon: a.longitude }
+              : null),
+          location: a.location || {},
+          // Use backend photo if provided, otherwise fallback to static map when we have lat/lon
+          image:
+            a.image ||
+            (a.latitude && a.longitude
+              ? `https://maps.googleapis.com/maps/api/staticmap?center=${a.latitude},${a.longitude}&zoom=15&size=600x400&markers=color:red%7C${a.latitude},${a.longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
+              : null),
+          link: a.link || null,
+          weather: a.weather || null,
+          travelTime: a.travelTime ?? null,
+        }));
 
-    coordinates: { lat: a.latitude, lon: a.longitude },
-    location: { name: a.title, country: "AU" },
+      // Modern backend shape: itinerary.days[] from /api/itineraries
+      } else if (Array.isArray(json.itinerary?.days)) {
+        const apiActivities = json.itinerary.days[0]?.activities || [];
 
-// Google Places Photo (if available)
-image: a.photo_reference
-  ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${a.photo_reference}&key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}`
-  : `/fallback.jpg`,
+        activities = apiActivities.map((a) => ({
+          time: a.time_of_day || a.time || "Flexible",
+          title: a.title || "Activity",
+          details: a.description || "",
+          cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
+          coordinates:
+            a.coordinates ||
+            (a.latitude && a.longitude
+              ? { lat: a.latitude, lon: a.longitude }
+              : null),
+          location: { name: a.title, country: "AU" },
+          image:
+            a.image ||
+            (a.latitude && a.longitude
+              ? `https://maps.googleapis.com/maps/api/staticmap?center=${a.latitude},${a.longitude}&zoom=15&size=600x400&markers=color:red%7C${a.latitude},${a.longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
+              : null),
+          // normalized weather from top-level json.weather
+          weather: json.weather || null,
+          weatherTemp: json.weather?.main?.temp ?? null,
+          weatherDesc: json.weather?.weather?.[0]?.description ?? null,
+          weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
+          travelTime: null,
+        }));
 
-    // weather normalized to your UI
-    weather: json.weather || null,
-    weatherTemp: json.weather?.main?.temp ?? null,
-    weatherDesc: json.weather?.weather?.[0]?.description ?? null,
-    weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
+      // Legacy backend shape: json.itinerary.itinerary.activities
+      } else if (json.itinerary?.itinerary?.activities) {
+        const apiActivities = json.itinerary.itinerary.activities;
 
-    travelTime: null,
-  }));
-}
+        activities = apiActivities.map((a) => ({
+          time: a.time || "Flexible",
+          title: a.title || "Activity",
+          details: a.description || "",
+          cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
+          coordinates:
+            a.coordinates ||
+            (a.latitude && a.longitude
+              ? { lat: a.latitude, lon: a.longitude }
+              : null),
+          location: { name: a.title, country: "AU" },
+          image:
+            a.image ||
+            (a.latitude && a.longitude
+              ? `https://maps.googleapis.com/maps/api/staticmap?center=${a.latitude},${a.longitude}&zoom=15&size=600x400&markers=color:red%7C${a.latitude},${a.longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
+              : null),
+          // normalized weather from top-level json.weather
+          weather: json.weather || null,
+          weatherTemp: json.weather?.main?.temp ?? null,
+          weatherDesc: json.weather?.weather?.[0]?.description ?? null,
+          weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
+          travelTime: null,
+        }));
 
-// Fallback for legacy formats
-else {
-  const slots = json.itinerary?.slots || json.slots || [];
+      // FALLBACK SHAPE
+      } else {
+        const slots = json.itinerary?.slots || json.slots || [];
 
-  activities = slots.map((slot) => ({
-    time: slot.time || "Flexible",
-    title: slot.placeName || slot.title || "Activity",
-    details: slot.description || "",
-    cost_estimate: slot.approxCostAUD
-      ? `Approx ${slot.approxCostAUD} AUD`
-      : "",
-    coordinates: slot.coordinates || null,
-    location: slot.location || {},
-    image: slot.image || null,
-    link: slot.link || null,
-    weather: slot.weather || null,
-    travelTime: null,
-  }));
-}
+        activities = slots.map((slot) => ({
+          time: slot.time || "Flexible",
+          title: slot.placeName || slot.title || "Activity",
+          details: slot.description || "",
+          cost_estimate: slot.approxCostAUD
+            ? `Approx ${slot.approxCostAUD} AUD`
+            : "",
+          coordinates: slot.coordinates || null,
+          location: slot.location || {},
+          image:
+            slot.image ||
+            (slot.coordinates?.lat && slot.coordinates?.lon
+              ? `https://maps.googleapis.com/maps/api/staticmap?center=${slot.coordinates.lat},${slot.coordinates.lon}&zoom=15&size=600x400&markers=color:red%7C${slot.coordinates.lat},${slot.coordinates.lon}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
+              : null),
+          link: slot.link || null,
+          weather: slot.weather || null,
+          travelTime: null,
+        }));
+      }
 
-// Build final itinerary structure
-const newItinerary = [
-  {
-    day: 1,
-    activities,
-  },
-];
+      const newItinerary = [
+        {
+          day: 1,
+          activities,
+        },
+      ];
 
-// Compute travel times
-for (const day of newItinerary) {
-  const acts = day.activities || [];
-  const tasks = acts.map(async (a, i) => {
-    if (i === 0) {
-      a.travelTime = null;
-      return;
-    }
-    const prev = acts[i - 1]?.coordinates;
-    const cur = a.coordinates;
-    if (!prev || !cur) {
-      a.travelTime = null;
-      return;
-    }
-    const route = await fetchRoute(prev, cur);
-    a.travelTime = route.label;
-  });
-  await Promise.all(tasks);
-}
+      // recompute travel times between stops
+      for (const day of newItinerary) {
+        const acts = day.activities || [];
+        const tasks = acts.map(async (a, i) => {
+          if (i === 0) {
+            a.travelTime = null;
+            return;
+          }
+          const prev = acts[i - 1]?.coordinates;
+          const cur = a.coordinates;
+          if (!prev || !cur) {
+            a.travelTime = null;
+            return;
+          }
+          const route = await fetchRoute(prev, cur);
+          a.travelTime = route.label;
+        });
+        await Promise.all(tasks);
+      }
 
-// Push to state
-setData({ itinerary: newItinerary });
-setActiveDay(0);
-setShowRouteMap(false);
-await recomputeAll(newItinerary);
+      setData({ itinerary: newItinerary });
+      setActiveDay(0);
+      setShowRouteMap(false);
 
-// Restore focus
-setTimeout(() => inputRef.current?.focus(), 50);
+      await recomputeAll(newItinerary);
 
       setTimeout(() => inputRef.current?.focus(), 50);
     } catch (err) {
@@ -522,7 +574,6 @@ setTimeout(() => inputRef.current?.focus(), 50);
       setLoading(false);
     }
   };
-
 
   /* ----------------------- recompute helpers ----------------------- */
 
@@ -542,7 +593,10 @@ setTimeout(() => inputRef.current?.focus(), 50);
     const optimized = mixedOptimizeActivities(acts);
     const currentTotals = bundle.totals;
     const optBundle = await buildRoutesAndTotals([...optimized], false);
-    const saved = Math.max(0, (currentTotals.totalMin || 0) - (optBundle.totals.totalMin || 0));
+    const saved = Math.max(
+      0,
+      (currentTotals.totalMin || 0) - (optBundle.totals.totalMin || 0)
+    );
     setSavingsByDay((prev) => ({ ...prev, [idx]: saved }));
   };
 
@@ -554,7 +608,9 @@ setTimeout(() => inputRef.current?.focus(), 50);
 
   const optimizeActiveDay = async () => {
     const it = Array.isArray(data.itinerary) ? [...data.itinerary] : [];
-    const acts = Array.isArray(it[activeDay]?.activities) ? it[activeDay].activities : [];
+    const acts = Array.isArray(it[activeDay]?.activities)
+      ? it[activeDay].activities
+      : [];
     if (acts.length < 3) return;
     const optimized = mixedOptimizeActivities(acts);
     it[activeDay] = { ...it[activeDay], activities: optimized };
@@ -565,7 +621,9 @@ setTimeout(() => inputRef.current?.focus(), 50);
   /* ----------------------- CSV export ----------------------- */
 
   const exportCSV = () => {
-    const rows = [["Day", "Time", "Title", "Location", "Country", "Travel Time", "Weather", "Map Link"]];
+    const rows = [
+      ["Day", "Time", "Title", "Location", "Country", "Travel Time", "Weather", "Map Link"],
+    ];
     (data.itinerary || []).forEach((day) =>
       (day.activities || []).forEach((act) => {
         const loc = act.location || {};
@@ -586,7 +644,9 @@ setTimeout(() => inputRef.current?.focus(), 50);
     );
     const csv = Papa.unparse(rows);
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    link.href = URL.createObjectURL(
+      new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    );
     link.download = "itinerary.csv";
     link.click();
   };
@@ -658,176 +718,183 @@ setTimeout(() => inputRef.current?.focus(), 50);
 
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc" }}>
-{/* Banner / hero */}
-<div style={{ 
-  width: "100%", 
-  height: 140, 
-  overflow: "hidden", 
-  position: "relative",
-  marginTop: "-2px"
-}}>
-  <img
-    src="/banner.jpg"
-    alt="Banner"
-    style={{ 
-      width: "100%", 
-      height: "100%", 
-      objectFit: "cover", 
-      filter: "brightness(0.92) saturate(1.1)" 
-    }}
-  />
+      {/* Banner / hero */}
+      <div
+        style={{
+          width: "100%",
+          height: 140,
+          overflow: "hidden",
+          position: "relative",
+          marginTop: "-2px",
+        }}
+      >
+        <img
+          src="/banner.jpg"
+          alt="Banner"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            filter: "brightness(0.92) saturate(1.1)",
+          }}
+        />
 
-  <div
-    style={{
-      position: "absolute",
-      inset: 0,
-      background: "linear-gradient(to bottom, rgba(0,0,0,.25), rgba(0,0,0,0))",
-    }}
-  />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(to bottom, rgba(0,0,0,.25), rgba(0,0,0,0))",
+          }}
+        />
 
-  <div
-    style={{
-      position: "absolute",
-      bottom: 18,
-      left: "50%",
-      transform: "translateX(-50%)",
-      color: "#fff",
-      fontWeight: 700,
-      fontSize: 24,
-      textShadow: "0 3px 8px rgba(0,0,0,.35)",
-    }}
-  >
-    Your TripPuddy Itinerary Planner 🗺️
-  </div>
-</div>
+        <div
+          style={{
+            position: "absolute",
+            bottom: 18,
+            left: "50%",
+            transform: "translateX(-50%)",
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: 24,
+            textShadow: "0 3px 8px rgba(0,0,0,.35)",
+          }}
+        >
+          Your TripPuddy Itinerary Planner 🗺️
+        </div>
+      </div>
 
       <div style={{ maxWidth: 1120, margin: "20px auto", padding: "0 16px" }}>
         {/* Query box */}
-<div
-  style={{
-    background: "#ffffff",
-    borderRadius: 14,
-    boxShadow: "0 3px 10px rgba(0,0,0,.08)",
-    padding: 16,
-    marginTop: 24,
-    display: "flex",
-    gap: 12,
-    alignItems: "center",
-    border: "1px solid #e2e8f0",
-  }}
->
-  <input
-    ref={inputRef}
-    placeholder="Describe your trip... e.g. 3 days Singapore food + culture, mid budget"
-    value={prompt}
-    onChange={(e) => setPrompt(e.target.value)}
-    onKeyDown={(e) => e.key === 'Enter' && generate()}
-    style={{
-      flex: 1,
-      padding: "14px 16px",
-      borderRadius: 12,
-      border: "1px solid #d1d5db",
-      outline: "none",
-      fontSize: "1.05rem",
-    }}
-  />
-
-  <button
-    disabled={loading}
-    onClick={generate}
-    style={{
-      background: "#0d9488",
-      color: "#fff",
-      padding: "14px 22px",
-      borderRadius: 12,
-      fontWeight: 700,
-      border: "none",
-      fontSize: "1rem",
-      minWidth: 130,
-    }}
-  >
-    {loading ? "Generating…" : "Generate"}
-  </button>
-</div>
-
-
-        {/* Days header / controls */}
-{data.itinerary?.length > 0 && (
-  <div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 12,
-      marginTop: 22,
-      flexWrap: "wrap",
-    }}
-  >
-    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-      {data.itinerary.map((_, i) => (
-        <button
-          key={i}
-          onClick={() => { setActiveDay(i); setShowRouteMap(false); }}
+        <div
           style={{
-            padding: "10px 16px",
-            borderRadius: 10,
-            background: activeDay === i ? "#1e3a8a" : "#e2e8f0",
-            color: activeDay === i ? "#fff" : "#1e293b",
-            border: "none",
-            fontWeight: 700,
-            fontSize: "0.95rem",
+            background: "#ffffff",
+            borderRadius: 14,
+            boxShadow: "0 3px 10px rgba(0,0,0,.08)",
+            padding: 16,
+            marginTop: 24,
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            border: "1px solid #e2e8f0",
           }}
         >
-          Day {i + 1}
-        </button>
-      ))}
-    </div>
+          <input
+            ref={inputRef}
+            placeholder="Describe your trip... e.g. 3 days Singapore food + culture, mid budget"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && generate()}
+            style={{
+              flex: 1,
+              padding: "14px 16px",
+              borderRadius: 12,
+              border: "1px solid #d1d5db",
+              outline: "none",
+              fontSize: "1.05rem",
+            }}
+          />
 
-    <div style={{ marginLeft: "auto", fontWeight: 700, color: "#334155" }}>
-      📅 {daySummary(activeDay)}
-    </div>
+          <button
+            disabled={loading}
+            onClick={generate}
+            style={{
+              background: "#0d9488",
+              color: "#fff",
+              padding: "14px 22px",
+              borderRadius: 12,
+              fontWeight: 700,
+              border: "none",
+              fontSize: "1rem",
+              minWidth: 130,
+            }}
+          >
+            {loading ? "Generating…" : "Generate"}
+          </button>
+        </div>
 
-    <button
-      onClick={optimizeActiveDay}
-      style={{
-        background: showOptimizeRecommend ? "#0ea5e9" : "#e2e8f0",
-        color: showOptimizeRecommend ? "#fff" : "#1e293b",
-        border: "none",
-        padding: "9px 14px",
-        borderRadius: 10,
-        fontWeight: 700,
-        fontSize: "0.9rem",
-      }}
-    >
-      {optimizeLabel}
-    </button>
+        {/* Days header / controls */}
+        {data.itinerary?.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              marginTop: 22,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {data.itinerary.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setActiveDay(i);
+                    setShowRouteMap(false);
+                  }}
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: 10,
+                    background: activeDay === i ? "#1e3a8a" : "#e2e8f0",
+                    color: activeDay === i ? "#fff" : "#1e293b",
+                    border: "none",
+                    fontWeight: 700,
+                    fontSize: "0.95rem",
+                  }}
+                >
+                  Day {i + 1}
+                </button>
+              ))}
+            </div>
 
-    <button
-      onClick={() => setShowRouteMap((v) => !v)}
-      style={{
-        background: "#facc15",
-        color: "#1e3a8a",
-        padding: "9px 14px",
-        borderRadius: 10,
-        fontWeight: 900,
-        border: "none",
-      }}
-    >
-      {showRouteMap ? "Hide Map" : "Show Map"}
-    </button>
+            <div
+              style={{ marginLeft: "auto", fontWeight: 700, color: "#334155" }}
+            >
+              📅 {daySummary(activeDay)}
+            </div>
 
-    <button
-      onClick={() => exportCSV()}
-      style={{
-        padding: "9px 14px",
-        borderRadius: 10,
-        background: "#e2e8f0",
-        color: "#1e293b",
-        fontWeight: 700,
-        border: "1px solid #cbd5e1",
-      }}
-    >
-      Export CSV
-    </button>
+            <button
+              onClick={optimizeActiveDay}
+              style={{
+                background: showOptimizeRecommend ? "#0ea5e9" : "#e2e8f0",
+                color: showOptimizeRecommend ? "#fff" : "#1e293b",
+                border: "none",
+                padding: "9px 14px",
+                borderRadius: 10,
+                fontWeight: 700,
+                fontSize: "0.9rem",
+              }}
+            >
+              {optimizeLabel}
+            </button>
+
+            <button
+              onClick={() => setShowRouteMap((v) => !v)}
+              style={{
+                background: "#facc15",
+                color: "#1e3a8a",
+                padding: "9px 14px",
+                borderRadius: 10,
+                fontWeight: 900,
+                border: "none",
+              }}
+            >
+              {showRouteMap ? "Hide Map" : "Show Map"}
+            </button>
+
+            <button
+              onClick={() => exportCSV()}
+              style={{
+                padding: "9px 14px",
+                borderRadius: 10,
+                background: "#e2e8f0",
+                color: "#1e293b",
+                fontWeight: 700,
+                border: "1px solid #cbd5e1",
+              }}
+            >
+              Export CSV
+            </button>
 
             {/* PDF export button */}
             {data.itinerary?.length > 0 && (
@@ -874,13 +941,24 @@ setTimeout(() => inputRef.current?.focus(), 50);
         {/* Itinerary list (DnD) */}
         {data.itinerary?.[activeDay] && (
           <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={itemsForDay} strategy={verticalListSortingStrategy}>
-              <ul style={{ listStyle: "none", margin: 0, padding: 0, marginTop: 12 }}>
+            <SortableContext
+              items={itemsForDay}
+              strategy={verticalListSortingStrategy}
+            >
+              <ul
+                style={{
+                  listStyle: "none",
+                  margin: 0,
+                  padding: 0,
+                  marginTop: 12,
+                }}
+              >
                 {data.itinerary[activeDay].activities?.map((act, i) => {
                   const loc = act.location || {};
                   const w = act.weather;
                   const c = act.coordinates;
-                  const prevC = data.itinerary[activeDay].activities?.[i - 1]?.coordinates;
+                  const prevC =
+                    data.itinerary[activeDay].activities?.[i - 1]?.coordinates;
                   const mode = prevC && c ? modeFor(distKm(prevC, c)) : undefined;
 
                   const daySegments = routesByDay[activeDay]?.segments || [];
@@ -905,13 +983,29 @@ setTimeout(() => inputRef.current?.focus(), 50);
                         >
                           {/* LEFT */}
                           <div className="left">
-                            <div className="title" style={{ fontSize: 18, fontWeight: 700 }}>
+                            <div
+                              className="title"
+                              style={{ fontSize: 18, fontWeight: 700 }}
+                            >
                               <b>{act.time || "Flexible"}</b> — {act.title}
                             </div>
 
-                            <div className="loc" style={{ marginTop: 6, fontSize: 15, color: "#111827" }}>
+                            <div
+                              className="loc"
+                              style={{
+                                marginTop: 6,
+                                fontSize: 15,
+                                color: "#111827",
+                              }}
+                            >
                               <span style={{ marginRight: 6 }}>📍</span>
-                              <span className="flag" style={{ fontWeight: 800, letterSpacing: 1 }}>
+                              <span
+                                className="flag"
+                                style={{
+                                  fontWeight: 800,
+                                  letterSpacing: 1,
+                                }}
+                              >
                                 {flag(loc.country)}{" "}
                               </span>
                               {loc.name}
@@ -934,44 +1028,65 @@ setTimeout(() => inputRef.current?.focus(), 50);
                               )}
                             </div>
 
-{act.weatherTemp !== null && (
-  <div
-    className="weather"
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      marginTop: 6,
-      color: "#0ea5e9",
-      fontWeight: 700,
-    }}
-  >
-    <img
-      src={`https://openweathermap.org/img/wn/${act.weatherIcon}@2x.png`}
-      alt="weather icon"
-      style={{ width: 32, height: 32 }}
-    />
-    <span>
-      {Math.round(act.weatherTemp)}°C — {act.weatherDesc}
-    </span>
-  </div>
-)}
+                            {act.weatherTemp !== null && (
+                              <div
+                                className="weather"
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 8,
+                                  marginTop: 6,
+                                  color: "#0ea5e9",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                <img
+                                  src={`https://openweathermap.org/img/wn/${act.weatherIcon}@2x.png`}
+                                  alt="weather icon"
+                                  style={{ width: 32, height: 32 }}
+                                />
+                                <span>
+                                  {Math.round(act.weatherTemp)}°C —{" "}
+                                  {act.weatherDesc}
+                                </span>
+                              </div>
+                            )}
 
                             {act.details && (
-                              <div className="details" style={{ marginTop: 8, color: "#374151" }}>
+                              <div
+                                className="details"
+                                style={{
+                                  marginTop: 8,
+                                  color: "#374151",
+                                }}
+                              >
                                 {act.details}
                               </div>
                             )}
 
                             {act.cost_estimate && (
-                              <div className="cost" style={{ marginTop: 6, color: "#15803d", fontWeight: 700 }}>
+                              <div
+                                className="cost"
+                                style={{
+                                  marginTop: 6,
+                                  color: "#15803d",
+                                  fontWeight: 700,
+                                }}
+                              >
                                 💰 {act.cost_estimate}
                               </div>
                             )}
                           </div>
 
                           {/* RIGHT */}
-                          <div className="right" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div
+                            className="right"
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 8,
+                            }}
+                          >
                             {/* mini map for this activity: only show previous→current segment */}
                             {c && (
                               <div
@@ -1012,22 +1127,26 @@ setTimeout(() => inputRef.current?.focus(), 50);
                               </div>
                             )}
 
-<img
-  src={act.image}
-  alt={act.title}
-  onClick={() => setPopupImage(act.image)}
-  onError={(e) => (e.currentTarget.src = "/fallback.jpg")}
-  className="thumb"
-  style={{
-    width: "100%",
-    height: 135,
-    objectFit: "cover",
-    borderRadius: 10,
-    cursor: "zoom-in",
-    background: "#f9fafb",
-    outline: "1px solid #f0f2f6",
-  }}
-/>
+                            {act.image && (
+                              <img
+                                src={act.image}
+                                alt=""
+                                onClick={() => setPopupImage(act.image)}
+                                onError={(e) =>
+                                  (e.currentTarget.src = "/fallback.jpg")
+                                }
+                                className="thumb"
+                                style={{
+                                  width: "100%",
+                                  height: 135,
+                                  objectFit: "cover",
+                                  borderRadius: 10,
+                                  cursor: "zoom-in",
+                                  background: "#f9fafb",
+                                  outline: "1px solid #f0f2f6",
+                                }}
+                              />
+                            )}
                           </div>
                         </div>
                       </SortableActivity>
@@ -1051,7 +1170,13 @@ setTimeout(() => inputRef.current?.focus(), 50);
                 border: "1px solid #eef2f7",
               }}
             >
-              <div style={{ fontWeight: 900, marginBottom: 8, color: "#0f172a" }}>
+              <div
+                style={{
+                  fontWeight: 900,
+                  marginBottom: 8,
+                  color: "#0f172a",
+                }}
+              >
                 Full Day Route — Day {activeDay + 1}
               </div>
               <div style={{ width: "100%", height: "48vh" }}>
@@ -1102,8 +1227,12 @@ setTimeout(() => inputRef.current?.focus(), 50);
               boxShadow: "0 0 24px rgba(0,0,0,0.4)",
               transition: "transform 0.25s ease",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.02)")}
-            onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1.0)")}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.transform = "scale(1.02)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.transform = "scale(1.0)")
+            }
           />
         </div>
       )}
