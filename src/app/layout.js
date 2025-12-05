@@ -1,20 +1,18 @@
-import "leaflet/dist/leaflet.css";
+// src/app/layout.js
 import "./globals.css";
-import Navbar from "../components/Navbar";
-import ClientShell from "./client-shell";
 
 export const metadata = {
   title: "TripPuddy",
-  description: "Your AI travel companion",
+  description: "Your AI-powered travel assistant",
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>
-        <ClientShell>
+      <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
+        <div className="flex flex-col min-h-screen">
           {children}
-        </ClientShell>
+        </div>
       </body>
     </html>
   );

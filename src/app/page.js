@@ -1,23 +1,34 @@
-"use client";
-
-import { useRouter } from "next/navigation";
-import MoodChips from "@/components/MoodChips";
-
-export default function HomePage() {
-  const router = useRouter();
-
-  function handleSelect(mood) {
-    localStorage.setItem("tripPuddyMood", mood);
-    router.push("/chat");
-  }
-
+export default function Home() {
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-[url('/images/travel-bg.jpg')] bg-cover bg-center text-white">
-      <div className="bg-black/50 p-8 rounded-2xl text-center">
-        <h1 className="text-3xl font-bold mb-3">
-          What kind of break do you need?
-        </h1>
-        <MoodChips onSelect={handleSelect} />
+    <div>
+
+      {/* NAVBAR */}
+      <div className="navbar">
+        <div className="logo text-3xl font-bold">TripPuddy</div>
+        <div className="navbar-links">
+          <a href="/">Home</a>
+          <a href="/itinerary">Itinerary</a>
+          <a href="/about">About</a>
+          <a href="/contact">Contact</a>
+        </div>
+        <a href="/login" className="nav-login-btn">Login</a>
+      </div>
+
+      {/* HERO SECTION */}
+      <div
+        className="hero"
+        style={{
+          backgroundImage:
+            "url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1950&q=80')",
+        }}
+      >
+        <h1 className="hero-title">What kind of break do you need?</h1>
+
+        <div className="hero-buttons">
+          <button>😌 Relax</button>
+          <button>🧭 Explore</button>
+          <button>🌴 Escape</button>
+        </div>
       </div>
     </div>
   );

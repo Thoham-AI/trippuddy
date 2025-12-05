@@ -91,6 +91,11 @@ export default function Navbar() {
           Contact
         </Link>
 
+        {/* ⭐ NEW — CHAT BUTTON */}
+        <Link href="/chat" style={navLinkStyle}>
+          Chat
+        </Link>
+
         {/* 🔔 Notification Bell → route to chat */}
         <div
           onClick={() => {
