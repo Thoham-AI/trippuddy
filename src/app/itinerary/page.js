@@ -458,26 +458,50 @@ export default function DestinationsPage() {
         const apiActivities = json.itinerary.days[0]?.activities || [];
 
         activities = apiActivities.map((a) => ({
-          time: a.time_of_day || a.time || "Flexible",
+          // main label that shows in the card title
+          time:
+            a.arrival_time ||
+            a.time_of_day ||
+            a.time ||
+            "Flexible",
+
+          // new time-specific fields
+          arrival_time: a.arrival_time || null,
+          durationMinutes: a.duration_minutes || null,
+          departure_time: a.suggested_departure_time || null,
+          distanceFromPreviousKm: a.distance_km_from_previous ?? null,
+          travelTimeFromPreviousMinutes:
+            a.travel_time_minutes_from_previous ?? null,
+
           title: a.title || "Activity",
           details: a.description || "",
-          cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
+          cost_estimate: a.estimated_cost
+            ? `Approx ${a.estimated_cost} AUD`
+            : "",
+
           coordinates:
             a.coordinates ||
             (a.latitude && a.longitude
               ? { lat: a.latitude, lon: a.longitude }
               : null),
+
           location: { name: a.title, country: "AU" },
+
           image:
             a.image ||
             (a.latitude && a.longitude
               ? `https://maps.googleapis.com/maps/api/staticmap?center=${a.latitude},${a.longitude}&zoom=15&size=600x400&markers=color:red%7C${a.latitude},${a.longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
               : null),
+
           // normalized weather from top-level json.weather
           weather: json.weather || null,
           weatherTemp: json.weather?.main?.temp ?? null,
           weatherDesc: json.weather?.weather?.[0]?.description ?? null,
           weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
+          weatherLink: json.weather?.id
+            ? `https://openweathermap.org/city/${json.weather.id}`
+            : null,
+
           travelTime: null,
         }));
 
@@ -984,11 +1008,38 @@ export default function DestinationsPage() {
                           {/* LEFT */}
                           <div className="left">
                             <div
-                              className="title"
-                              style={{ fontSize: 18, fontWeight: 700 }}
-                            >
-                              <b>{act.time || "Flexible"}</b> — {act.title}
-                            </div>
+  className="title"
+  style={{ fontSize: 18, fontWeight: 700 }}
+>
+  <b>{act.time || "Flexible"}</b> — {act.title}
+</div>
+
+{(act.arrival_time || act.durationMinutes || act.departure_time) && (
+  <div
+    className="timing"
+    style={{
+      marginTop: 4,
+      fontSize: 13,
+      color: "#4b5563",
+      fontWeight: 500,
+    }}
+  >
+    {act.arrival_time && <span>Arrive {act.arrival_time}</span>}
+    {act.durationMinutes && (
+      <span>
+        {act.arrival_time ? " · " : ""}
+        Stay ~{act.durationMinutes} min
+      </span>
+    )}
+    {act.departure_time && (
+      <span>
+        {(act.arrival_time || act.durationMinutes) ? " · " : ""}
+        Leave {act.departure_time}
+      </span>
+    )}
+  </div>
+)}
+
 
                             <div
                               className="loc"
@@ -1029,28 +1080,36 @@ export default function DestinationsPage() {
                             </div>
 
                             {act.weatherTemp !== null && (
-                              <div
-                                className="weather"
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 8,
-                                  marginTop: 6,
-                                  color: "#0ea5e9",
-                                  fontWeight: 700,
-                                }}
-                              >
-                                <img
-                                  src={`https://openweathermap.org/img/wn/${act.weatherIcon}@2x.png`}
-                                  alt="weather icon"
-                                  style={{ width: 32, height: 32 }}
-                                />
-                                <span>
-                                  {Math.round(act.weatherTemp)}°C —{" "}
-                                  {act.weatherDesc}
-                                </span>
-                              </div>
-                            )}
+  <div
+    className="weather"
+    role={act.weatherLink ? "button" : undefined}
+    onClick={() => {
+      if (act.weatherLink) {
+        window.open(act.weatherLink, "_blank");
+      }
+    }}
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginTop: 6,
+      color: "#0ea5e9",
+      fontWeight: 700,
+      cursor: act.weatherLink ? "pointer" : "default",
+      textDecoration: act.weatherLink ? "underline" : "none",
+    }}
+  >
+    <img
+      src={`https://openweathermap.org/img/wn/${act.weatherIcon}@2x.png`}
+      alt="weather icon"
+      style={{ width: 32, height: 32 }}
+    />
+    <span>
+      {Math.round(act.weatherTemp)}°C — {act.weatherDesc}
+    </span>
+  </div>
+)}
+
 
                             {act.details && (
                               <div
@@ -1127,26 +1186,42 @@ export default function DestinationsPage() {
                               </div>
                             )}
 
-                            {act.image && (
-                              <img
-                                src={act.image}
-                                alt=""
-                                onClick={() => setPopupImage(act.image)}
-                                onError={(e) =>
-                                  (e.currentTarget.src = "/fallback.jpg")
-                                }
-                                className="thumb"
-                                style={{
-                                  width: "100%",
-                                  height: 135,
-                                  objectFit: "cover",
-                                  borderRadius: 10,
-                                  cursor: "zoom-in",
-                                  background: "#f9fafb",
-                                  outline: "1px solid #f0f2f6",
-                                }}
-                              />
-                            )}
+                            {popupImage && (
+  <div
+    className="overlay"
+    onClick={() => setPopupImage(null)}
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.85)",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      zIndex: 9999,
+      cursor: "zoom-out",
+    }}
+  >
+    <img
+      className="modalImg"
+      src={popupImage}
+      alt="full"
+      style={{
+        maxWidth: "92%",
+        maxHeight: "92%",
+        borderRadius: "12px",
+        boxShadow: "0 0 24px rgba(0,0,0,0.4)",
+        transition: "transform 0.25s ease",
+      }}
+      onMouseEnter={(e) =>
+        (e.currentTarget.style.transform = "scale(1.02)")
+      }
+      onMouseLeave={(e) =>
+        (e.currentTarget.style.transform = "scale(1.0)")
+      }
+    />
+  </div>
+)}
+
                           </div>
                         </div>
                       </SortableActivity>
