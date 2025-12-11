@@ -987,68 +987,80 @@ export default function DestinationsPage() {
 
                   const daySegments = routesByDay[activeDay]?.segments || [];
                   const singleSeg = segmentForIndex(daySegments, i);
+return (
+  <li key={`act-${i}`} style={{ marginBottom: 18 }}>
+    <SortableActivity id={`act-${i}`}>
+      <div
+        className="card"
+        style={{
+          background: "#fff",
+          padding: 14,
+          borderRadius: 12,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 12,
+          boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+          position: "relative",
+          border: "1px solid #eef2f7",
+        }}
+      >
+        {/* LEFT SIDE */}
+        <div className="left">
 
-                  return (
-<li key={`act-${i}`} style={{ marginBottom: 18 }}>
-  <SortableActivity id={`act-${i}`}>
-    <div
-      className="card"
-      style={{
-        background: "#fff",
-        padding: 14,
-        borderRadius: 12,
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 12,
-        boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
-        position: "relative",
-        border: "1px solid #eef2f7",
-      }}
-    >
-      {/* LEFT SIDE */}
-      <div className="left">
-                            <div
-  className="title"
-  style={{ fontSize: 18, fontWeight: 700 }}
->
-  <b>{act.time || "Flexible"}</b> — {act.title}
-</div>
+          <div
+            className="title"
+            style={{ fontSize: 18, fontWeight: 700 }}
+          >
+            <b>{act.time || "Flexible"}</b> — {act.title}
+          </div>
 
-{(act.arrival_time || act.durationMinutes || act.departure_time) && (
-  <div
-    className="timing"
-    style={{
-      marginTop: 4,
-      fontSize: 13,
-      color: "#4b5563",
-      fontWeight: 500,
-    }}
-  >
-    {act.arrival_time && <span>Arrive {act.arrival_time}</span>}
-    {act.durationMinutes && (
-      <span>
-        {act.arrival_time ? " · " : ""}
-        Stay ~{act.durationMinutes} min
-      </span>
-    )}
-    {act.departure_time && (
-      <span>
-        {(act.arrival_time || act.durationMinutes) ? " · " : ""}
-        Leave {act.departure_time}
-      </span>
-    )}
-  </div>
-)}
+          {(act.arrival_time || act.durationMinutes || act.departure_time) && (
+            <div
+              className="timing"
+              style={{
+                marginTop: 4,
+                fontSize: 13,
+                color: "#4b5563",
+                fontWeight: 500,
+              }}
+            >
+              {act.arrival_time && <span>Arrive {act.arrival_time}</span>}
+              {act.durationMinutes && (
+                <span>
+                  {act.arrival_time ? " · " : ""}
+                  Stay ~{act.durationMinutes} min
+                </span>
+              )}
+              {act.departure_time && (
+                <span>
+                  {(act.arrival_time || act.durationMinutes) ? " · " : ""}
+                  Leave {act.departure_time}
+                </span>
+              )}
+            </div>
+          )}
 
+          <div
+            className="loc"
+            style={{
+              marginTop: 6,
+              fontSize: 15,
+              color: "#111827",
+            }}
+          >
+            {act.location}
+          </div>
 
-                            <div
-                              className="loc"
-                              style={{
-                                marginTop: 6,
-                                fontSize: 15,
-                                color: "#111827",
-                              }}
-                            >
+        </div> {/* END LEFT SIDE */}
+
+        {/* RIGHT SIDE (optional, if you have content here) */}
+        {/* <div className="right"> ... </div> */}
+
+      </div> {/* END card */}
+    </SortableActivity>
+  </li>
+);
+
                               <span style={{ marginRight: 6 }}>📍</span>
                               <span
                                 className="flag"
