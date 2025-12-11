@@ -23,15 +23,15 @@
     "papaparse": "^5.5.3",
     "pdf-lib": "^1.17.1",
     "puppeteer": "^24.29.1",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "react-leaflet": "^5.0.0",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4.1.17",
-    "@types/react": "19.2.2",
+    "@types/react": "18.3.5",
     "autoprefixer": "^10.4.21",
     "eslint": "^9",
     "eslint-config-next": "15.5.3",
