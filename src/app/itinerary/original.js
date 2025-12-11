@@ -1,18 +1,29 @@
 "use client";
 
+/**
+ * TripPuddy — Full Destination Planner / Itinerary Builder page
+ * Features:
+ *  - Prompt box → calls /api/destinations (your rich backend)
+ *  - Day list with draggable activities (dnd-kit)
+ *  - Per-activity mini map with previous→current segment
+ *  - Full-day route map toggle (polyline across all segments)
+ *  - “Optimize day” (lightweight clustering + nearest neighbor)
+ *  - Travel summaries (walk/drive min, total km)
+ *  - Export CSV
+ *  - Weather + image + website links, safe fallbacks
+ */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Papa from "papaparse";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import BudgetSummary from "@/components/itinerary/BudgetSummary";
-import TextModal from "@/components/itinerary/TextModal";
-import TripMap from "@/components/itinerary/TripMap";
 
-import {
-  DndContext,
-  closestCenter,
-} from "@dnd-kit/core";
+// Map (client only)
+const LeafletMap = dynamic(() => import("@/components/LeafletMap"), {
+  ssr: false,
+});
+
+// dnd-kit
+import { DndContext, closestCenter } from "@dnd-kit/core";
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -21,22 +32,10 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import ActivityCard from "@/components/itinerary/ActivityCard";
-import DayHeaderControls from "@/components/itinerary/DayHeaderControls";
-import PhotoModal from "@/components/itinerary/PhotoModal";
-import FullDayRouteMap from "@/components/itinerary/FullDayRouteMap";
-
-// Leaflet map (client only)
-const LeafletMap = dynamic(() => import("@/components/LeafletMap"), {
-  ssr: false,
-});
-
 /* ----------------------- Draggable wrapper ----------------------- */
-
 function SortableActivity({ id, children }) {
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id });
-
   return (
     <div
       ref={setNodeRef}
@@ -79,7 +78,7 @@ const minutesToStr = (mins, mode) =>
 const fallbackMinutes = (dKm, mode) =>
   mode === "walk" ? (dKm / 4) * 60 : (dKm / 30) * 60 + 3;
 
-/* ----------------------- routing via ORS ----------------------- */
+/* ----------------------- routing via ORS with safe fallbacks ----------------------- */
 
 async function fetchRoute(prev, next) {
   if (!prev || !next) {
@@ -129,6 +128,7 @@ async function fetchRoute(prev, next) {
     );
 
     if (!res.ok) {
+      // graceful fallback
       const mins = fallbackMinutes(dKm, mode);
       return {
         mode,
@@ -145,7 +145,8 @@ async function fetchRoute(prev, next) {
     let json;
     try {
       json = await res.json();
-    } catch {
+    } catch (err) {
+      // Rare parse issue from upstream — fallback
       const mins = fallbackMinutes(dKm, mode);
       return {
         mode,
@@ -170,7 +171,7 @@ async function fetchRoute(prev, next) {
         name: s.name,
       })) || [];
 
-    const coords = coordsLonLat.map(([lon, lat]) => [lat, lon]); // [lat, lon]
+    const coords = coordsLonLat.map(([lon, lat]) => [lat, lon]); // convert to [lat, lon]
     const mins = secs ? secs / 60 : fallbackMinutes(dKm, mode);
 
     return {
@@ -181,6 +182,7 @@ async function fetchRoute(prev, next) {
       steps,
     };
   } catch {
+    // network exceptions → fallback
     const mins = fallbackMinutes(dKm, mode);
     return {
       mode,
@@ -195,7 +197,10 @@ async function fetchRoute(prev, next) {
   }
 }
 
-/* Build adjacent routes in a day & aggregate totals. */
+/**
+ * Build all adjacent routes in a day & aggregate totals.
+ * mutateTravelTime: when true, writes the route label into each activity.travelTime
+ */
 async function buildRoutesAndTotals(activities, mutateTravelTime = true) {
   const segments = [];
   let totalKm = 0;
@@ -220,8 +225,8 @@ async function buildRoutesAndTotals(activities, mutateTravelTime = true) {
     else driveMin += route.minutes;
 
     segments.push({
-      mode: route.mode,
-      latlngs: route.coords,
+      mode: route.mode, // "walk" | "drive"
+      latlngs: route.coords, // [[lat, lon], ...]
       steps: route.steps,
     });
   }
@@ -239,6 +244,12 @@ async function buildRoutesAndTotals(activities, mutateTravelTime = true) {
 
 /* ----------------------- light "optimize" ordering ----------------------- */
 
+/**
+ * Mixed heuristic:
+ *  - Cluster by proximity (<= ~0.9km)
+ *  - Greedy nearest neighbor within clusters
+ *  - Then order clusters by centroid proximity
+ */
 function mixedOptimizeActivities(activities) {
   if (!activities?.length) return activities;
   const THRESH = 0.9; // km
@@ -316,83 +327,58 @@ function mixedOptimizeActivities(activities) {
   return flattened;
 }
 
-/* ----------------------- main component ----------------------- */
+/* ----------------------- component ----------------------- */
 
 export default function DestinationsPage() {
-
-  const parseCost = (str) => {
-    if (!str) return 0;
-    const nums = (str.match(/\d+(\.\d+)?/g) || []).map(Number);
-    if (!nums.length) return 0;
-    if (nums.length === 1) return nums[0];
-    const avg = (nums[0] + nums[1]) / 2;
-    return avg;
-  };
-
-  const computeBudget = () => {
-    if (!Array.isArray(data.itinerary)) return null;
-
-    const perDay = data.itinerary.map((d) => {
-      const total = (d.activities || []).reduce(
-        (sum, a) => sum + parseCost(a.cost_estimate),
-        0
-      );
-      return { day: d.day, total };
-    });
-
-    const total = perDay.reduce((s, d) => s + d.total, 0);
-    return { perDay, total };
-  };
-
-  const [showTripMap, setShowTripMap] = useState(false);
-
-  // budget + AI modals
-  const [budgetBreakdown, setBudgetBreakdown] = useState(null);
-  const [modalTitle, setModalTitle] = useState("");
-  const [modalText, setModalText] = useState("");
-
-  // for save/load
-  const STORAGE_KEY = "trippuddy_itinerary_v1";
-
   // UI state
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
 
   // Itinerary state
-  const [data, setData] = useState({ itinerary: [] });
+  const [data, setData] = useState({ itinerary: [], destinations: [] });
   const [activeDay, setActiveDay] = useState(0);
 
-  // Routes / geo
-  const [routesByDay, setRoutesByDay] = useState({});
+  // Route/geo
+  const [routesByDay, setRoutesByDay] = useState({}); // { idx: { segments, totals } }
   const [showRouteMap, setShowRouteMap] = useState(false);
 
   // UX extras
   const [popupImage, setPopupImage] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
-  const [savingsByDay, setSavingsByDay] = useState({});
+  const [savingsByDay, setSavingsByDay] = useState({}); // { idx: minutesSaved }
 
   const inputRef = useRef(null);
 
-  /* --------- safe geolocation (GPS → IP → AU centre) ---------- */
-
+  // Safe geolocation sampling (don’t use if too inaccurate)
   useEffect(() => {
-    function detectLocation() {
+    async function detectLocation() {
+      // 1. Try browser GPS first
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const { latitude, longitude } = pos.coords;
+
+          console.log("GPS location:", latitude, longitude);
           setUserLocation({ lat: latitude, lon: longitude });
         },
-        async () => {
+        async (err) => {
+          console.warn("GPS failed:", err.message);
+
+          // 2. Fallback → IP-based location
           try {
             const res = await fetch("https://ipapi.co/json/");
             const json = await res.json();
+
             if (json.latitude && json.longitude) {
+              console.log("Using IP geolocation:", json);
               setUserLocation({ lat: json.latitude, lon: json.longitude });
             } else {
               throw new Error("No IP location data");
             }
-          } catch {
-            setUserLocation({ lat: -25.2744, lon: 133.7751 }); // centre of AU
+          } catch (ipErr) {
+            console.error("IP geolocation failed:", ipErr);
+
+            // 3. Final fallback → center of Australia
+            setUserLocation({ lat: -25.2744, lon: 133.7751 });
           }
         },
         {
@@ -410,8 +396,12 @@ export default function DestinationsPage() {
 
   const generate = async () => {
     if (!prompt.trim()) return;
+    if (!userLocation) {
+      console.log("Location not ready yet — using fallback if needed.");
+    }
 
     setLoading(true);
+
     try {
       const { lat, lon } = userLocation || { lat: null, lon: null };
 
@@ -419,8 +409,8 @@ export default function DestinationsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userPrompt: prompt,
-          userLocation: { lat, lon },
+          userPrompt: prompt, // <-- send user's real query!
+          userLocation: { lat, lon }, // <-- real detected location
         }),
       });
 
@@ -431,11 +421,13 @@ export default function DestinationsPage() {
       }
 
       const json = await res.json();
+
       let activities = [];
 
-      // 1) Preferred new array backend
+      // Preferred new array backend
       if (Array.isArray(json.itinerary) && json.itinerary.length > 0) {
         const apiActivities = json.itinerary[0].activities || [];
+
         activities = apiActivities.map((a) => ({
           time: a.time || "Flexible",
           title: a.title || a.placeName || "Activity",
@@ -450,6 +442,7 @@ export default function DestinationsPage() {
               ? { lat: a.latitude, lon: a.longitude }
               : null),
           location: a.location || {},
+          // Use backend photo if provided, otherwise fallback to static map when we have lat/lon
           image:
             a.image ||
             (a.latitude && a.longitude
@@ -460,34 +453,47 @@ export default function DestinationsPage() {
           travelTime: a.travelTime ?? null,
         }));
 
-      // 2) Modern backend: itinerary.days[]
+      // Modern backend shape: itinerary.days[] from /api/itineraries
       } else if (Array.isArray(json.itinerary?.days)) {
         const apiActivities = json.itinerary.days[0]?.activities || [];
 
         activities = apiActivities.map((a) => ({
-          time: a.arrival_time || a.time_of_day || a.time || "Flexible",
+          // main label that shows in the card title
+          time:
+            a.arrival_time ||
+            a.time_of_day ||
+            a.time ||
+            "Flexible",
+
+          // new time-specific fields
           arrival_time: a.arrival_time || null,
           durationMinutes: a.duration_minutes || null,
           departure_time: a.suggested_departure_time || null,
           distanceFromPreviousKm: a.distance_km_from_previous ?? null,
           travelTimeFromPreviousMinutes:
             a.travel_time_minutes_from_previous ?? null,
+
           title: a.title || "Activity",
           details: a.description || "",
           cost_estimate: a.estimated_cost
             ? `Approx ${a.estimated_cost} AUD`
             : "",
+
           coordinates:
             a.coordinates ||
             (a.latitude && a.longitude
               ? { lat: a.latitude, lon: a.longitude }
               : null),
+
           location: { name: a.title, country: "AU" },
+
           image:
             a.image ||
             (a.latitude && a.longitude
               ? `https://maps.googleapis.com/maps/api/staticmap?center=${a.latitude},${a.longitude}&zoom=15&size=600x400&markers=color:red%7C${a.latitude},${a.longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
               : null),
+
+          // normalized weather from top-level json.weather
           weather: json.weather || null,
           weatherTemp: json.weather?.main?.temp ?? null,
           weatherDesc: json.weather?.weather?.[0]?.description ?? null,
@@ -495,12 +501,14 @@ export default function DestinationsPage() {
           weatherLink: json.weather?.id
             ? `https://openweathermap.org/city/${json.weather.id}`
             : null,
+
           travelTime: null,
         }));
 
-      // 3) Legacy shape: itinerary.itinerary.activities
+      // Legacy backend shape: json.itinerary.itinerary.activities
       } else if (json.itinerary?.itinerary?.activities) {
         const apiActivities = json.itinerary.itinerary.activities;
+
         activities = apiActivities.map((a) => ({
           time: a.time || "Flexible",
           title: a.title || "Activity",
@@ -517,6 +525,7 @@ export default function DestinationsPage() {
             (a.latitude && a.longitude
               ? `https://maps.googleapis.com/maps/api/staticmap?center=${a.latitude},${a.longitude}&zoom=15&size=600x400&markers=color:red%7C${a.latitude},${a.longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
               : null),
+          // normalized weather from top-level json.weather
           weather: json.weather || null,
           weatherTemp: json.weather?.main?.temp ?? null,
           weatherDesc: json.weather?.weather?.[0]?.description ?? null,
@@ -524,9 +533,10 @@ export default function DestinationsPage() {
           travelTime: null,
         }));
 
-      // 4) Fallback shape
+      // FALLBACK SHAPE
       } else {
         const slots = json.itinerary?.slots || json.slots || [];
+
         activities = slots.map((slot) => ({
           time: slot.time || "Flexible",
           title: slot.placeName || slot.title || "Activity",
@@ -547,9 +557,14 @@ export default function DestinationsPage() {
         }));
       }
 
-      const newItinerary = [{ day: 1, activities }];
+      const newItinerary = [
+        {
+          day: 1,
+          activities,
+        },
+      ];
 
-      // recompute travel times
+      // recompute travel times between stops
       for (const day of newItinerary) {
         const acts = day.activities || [];
         const tasks = acts.map(async (a, i) => {
@@ -700,6 +715,7 @@ export default function DestinationsPage() {
     await recomputeDay(activeDay, it);
   };
 
+  // Bounds to fit all activity markers on full-day map
   const fullDayBounds = useMemo(() => {
     const acts = data.itinerary[activeDay]?.activities || [];
     const pts = acts
@@ -709,6 +725,7 @@ export default function DestinationsPage() {
     return pts.length ? pts : null;
   }, [data.itinerary, activeDay]);
 
+  // Single-segment helper for the mini card maps
   const segmentForIndex = (segments, i) => {
     if (!segments || i <= 0) return [];
     const seg = segments[i - 1];
@@ -720,32 +737,6 @@ export default function DestinationsPage() {
   const optimizeLabel = showOptimizeRecommend
     ? `Improve Route (save ${Math.round(savedMin)}m)`
     : `Optimize day`;
-
-  /* ----------------------- PDF export ----------------------- */
-
-  const exportPdf = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch("/api/generatePdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itinerary: data.itinerary }),
-      });
-      setLoading(false);
-
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        window.open(url, "_blank");
-      } else {
-        alert("PDF generation failed.");
-      }
-    } catch (err) {
-      console.error("Export PDF error:", err);
-      setLoading(false);
-      alert("Error creating PDF. Check console for details.");
-    }
-  };
 
   /* ----------------------- render ----------------------- */
 
@@ -771,6 +762,7 @@ export default function DestinationsPage() {
             filter: "brightness(0.92) saturate(1.1)",
           }}
         />
+
         <div
           style={{
             position: "absolute",
@@ -779,6 +771,7 @@ export default function DestinationsPage() {
               "linear-gradient(to bottom, rgba(0,0,0,.25), rgba(0,0,0,0))",
           }}
         />
+
         <div
           style={{
             position: "absolute",
@@ -844,24 +837,129 @@ export default function DestinationsPage() {
           </button>
         </div>
 
-        {/* Day header & controls */}
+        {/* Days header / controls */}
         {data.itinerary?.length > 0 && (
-          <DayHeaderControls
-            itinerary={data.itinerary}
-            activeDay={activeDay}
-            setActiveDay={(i) => {
-              setActiveDay(i);
-              setShowRouteMap(false);
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              marginTop: 22,
+              flexWrap: "wrap",
             }}
-            daySummary={daySummary}
-            optimizeActiveDay={optimizeActiveDay}
-            optimizeLabel={optimizeLabel}
-            showOptimizeRecommend={showOptimizeRecommend}
-            showRouteMap={showRouteMap}
-            toggleRouteMap={() => setShowRouteMap((v) => !v)}
-            exportCSV={exportCSV}
-            exportPdf={exportPdf}
-          />
+          >
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {data.itinerary.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setActiveDay(i);
+                    setShowRouteMap(false);
+                  }}
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: 10,
+                    background: activeDay === i ? "#1e3a8a" : "#e2e8f0",
+                    color: activeDay === i ? "#fff" : "#1e293b",
+                    border: "none",
+                    fontWeight: 700,
+                    fontSize: "0.95rem",
+                  }}
+                >
+                  Day {i + 1}
+                </button>
+              ))}
+            </div>
+
+            <div
+              style={{ marginLeft: "auto", fontWeight: 700, color: "#334155" }}
+            >
+              📅 {daySummary(activeDay)}
+            </div>
+
+            <button
+              onClick={optimizeActiveDay}
+              style={{
+                background: showOptimizeRecommend ? "#0ea5e9" : "#e2e8f0",
+                color: showOptimizeRecommend ? "#fff" : "#1e293b",
+                border: "none",
+                padding: "9px 14px",
+                borderRadius: 10,
+                fontWeight: 700,
+                fontSize: "0.9rem",
+              }}
+            >
+              {optimizeLabel}
+            </button>
+
+            <button
+              onClick={() => setShowRouteMap((v) => !v)}
+              style={{
+                background: "#facc15",
+                color: "#1e3a8a",
+                padding: "9px 14px",
+                borderRadius: 10,
+                fontWeight: 900,
+                border: "none",
+              }}
+            >
+              {showRouteMap ? "Hide Map" : "Show Map"}
+            </button>
+
+            <button
+              onClick={() => exportCSV()}
+              style={{
+                padding: "9px 14px",
+                borderRadius: 10,
+                background: "#e2e8f0",
+                color: "#1e293b",
+                fontWeight: 700,
+                border: "1px solid #cbd5e1",
+              }}
+            >
+              Export CSV
+            </button>
+
+            {/* PDF export button */}
+            {data.itinerary?.length > 0 && (
+              <button
+                onClick={async () => {
+                  try {
+                    setLoading(true);
+                    const res = await fetch("/api/generatePdf", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ itinerary: data.itinerary }),
+                    });
+                    setLoading(false);
+
+                    if (res.ok) {
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      window.open(url, "_blank");
+                    } else {
+                      alert("PDF generation failed.");
+                    }
+                  } catch (err) {
+                    console.error("Export PDF error:", err);
+                    setLoading(false);
+                    alert("Error creating PDF. Check console for details.");
+                  }
+                }}
+                title="Export itinerary as PDF"
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  background: "#0ea5e9",
+                  color: "#fff",
+                  fontWeight: 700,
+                  border: "none",
+                }}
+              >
+                🧾 Export PDF
+              </button>
+            )}
+          </div>
         )}
 
         {/* Itinerary list (DnD) */}
@@ -881,6 +979,7 @@ export default function DestinationsPage() {
               >
                 {data.itinerary[activeDay].activities?.map((act, i) => {
                   const loc = act.location || {};
+                  const w = act.weather;
                   const c = act.coordinates;
                   const prevC =
                     data.itinerary[activeDay].activities?.[i - 1]?.coordinates;
@@ -892,18 +991,269 @@ export default function DestinationsPage() {
                   return (
                     <li key={`act-${i}`} style={{ marginBottom: 18 }}>
                       <SortableActivity id={`act-${i}`}>
-                        <ActivityCard
-                          act={act}
-                          loc={loc}
-                          mode={mode}
-                          coordinates={c}
-                          singleSeg={singleSeg}
-                          LeafletMap={LeafletMap}
-                          userLocation={userLocation}
-                          flag={flag}
-                          iconFor={iconFor}
-                          setPopupImage={setPopupImage}
-                        />
+                        <div
+                          className="card"
+                          style={{
+                            background: "#fff",
+                            padding: 14,
+                            borderRadius: 12,
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: 12,
+                            boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+                            position: "relative",
+                            border: "1px solid #eef2f7",
+                          }}
+                        >
+                          {/* LEFT */}
+                          <div className="left">
+                            <div
+  className="title"
+  style={{ fontSize: 18, fontWeight: 700 }}
+>
+  <b>{act.time || "Flexible"}</b> — {act.title}
+</div>
+
+{(act.arrival_time || act.durationMinutes || act.departure_time) && (
+  <div
+    className="timing"
+    style={{
+      marginTop: 4,
+      fontSize: 13,
+      color: "#4b5563",
+      fontWeight: 500,
+    }}
+  >
+    {act.arrival_time && <span>Arrive {act.arrival_time}</span>}
+    {act.durationMinutes && (
+      <span>
+        {act.arrival_time ? " · " : ""}
+        Stay ~{act.durationMinutes} min
+      </span>
+    )}
+    {act.departure_time && (
+      <span>
+        {(act.arrival_time || act.durationMinutes) ? " · " : ""}
+        Leave {act.departure_time}
+      </span>
+    )}
+  </div>
+)}
+
+
+                            <div
+                              className="loc"
+                              style={{
+                                marginTop: 6,
+                                fontSize: 15,
+                                color: "#111827",
+                              }}
+                            >
+                              <span style={{ marginRight: 6 }}>📍</span>
+                              <span
+                                className="flag"
+                                style={{
+                                  fontWeight: 800,
+                                  letterSpacing: 1,
+                                }}
+                              >
+                                {flag(loc.country)}{" "}
+                              </span>
+                              {loc.name}
+                              {act.link && (
+                                <a
+                                  href={act.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="Open website or Google Maps"
+                                  style={{
+                                    marginLeft: 8,
+                                    textDecoration: "none",
+                                    fontSize: 18,
+                                    cursor: "pointer",
+                                    opacity: 0.9,
+                                  }}
+                                >
+                                  🌐
+                                </a>
+                              )}
+                            </div>
+
+                            {act.weatherTemp !== null && (
+  <div
+    className="weather"
+    role={act.weatherLink ? "button" : undefined}
+    onClick={() => {
+	  const link = act.weather?.link || act.weatherLink;
+	  if (link) window.open(link, "_blank");
+	}}
+
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginTop: 6,
+      color: "#0ea5e9",
+      fontWeight: 700,
+      cursor: act.weatherLink ? "pointer" : "default",
+      textDecoration: act.weatherLink ? "underline" : "none",
+    }}
+  >
+    <img
+  src={`https://openweathermap.org/img/wn/${(act.weather?.icon || act.weatherIcon)}@2x.png`}
+  style={{ width: 32, height: 32 }}
+/>
+<span>
+  {Math.round(act.weather?.temp ?? act.weatherTemp)}°C — 
+  {act.weather?.description ?? act.weatherDesc}
+</span>
+)}
+
+                            {act.details && (
+                              <div
+                                className="details"
+                                style={{
+                                  marginTop: 8,
+                                  color: "#374151",
+                                }}
+                              >
+                                {act.details}
+                              </div>
+                            )}
+
+                            {act.cost_estimate && (
+                              <div
+                                className="cost"
+                                style={{
+                                  marginTop: 6,
+                                  color: "#15803d",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                💰 {act.cost_estimate}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* RIGHT */}
+                          <div
+                            className="right"
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 8,
+                            }}
+                          >
+{/* RIGHT */}
+<div
+  className="right"
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  }}
+>
+  {/* ACTIVITY IMAGE (CLICK TO ENLARGE) */}
+  {act.image && (
+    <img
+      src={act.image}
+      alt={act.title}
+      onClick={() => setPopupImage(act.image)}
+      style={{
+        width: "100%",
+        height: 150,
+        objectFit: "cover",
+        borderRadius: 10,
+        cursor: "zoom-in",
+        boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
+      }}
+    />
+  )}
+
+  {/* mini map */}
+  {c && (
+    <div className="mapWrap" ... >
+      <LeafletMap ... />
+    </div>
+  )}
+                            {/* mini map for this activity: only show previous→current segment */}
+                            {c && (
+                              <div
+                                className="mapWrap"
+                                style={{
+                                  position: "relative",
+                                  zIndex: 5,
+                                  overflow: "hidden",
+                                  borderRadius: 10,
+                                  height: 160,
+                                  outline: "1px solid #f0f2f6",
+                                }}
+                              >
+                                <LeafletMap
+                                  lat={c.lat}
+                                  lon={c.lon}
+                                  popup={loc.name}
+                                  routes={singleSeg}
+                                  user={userLocation}
+                                />
+                              </div>
+                            )}
+
+                            {act.travelTime && mode && (
+                              <div
+                                className="travelBadge"
+                                style={{
+                                  background: "#1e3a8a",
+                                  color: "#fff",
+                                  padding: "6px 12px",
+                                  fontSize: 14,
+                                  borderRadius: 18,
+                                  width: "fit-content",
+                                  fontWeight: 800,
+                                }}
+                              >
+                                {iconFor(mode)} {act.travelTime}
+                              </div>
+                            )}
+
+                            {popupImage && (
+  <div
+    className="overlay"
+    onClick={() => setPopupImage(null)}
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.85)",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      zIndex: 9999,
+      cursor: "zoom-out",
+    }}
+  >
+    <img
+      className="modalImg"
+      src={popupImage}
+      alt="full"
+      style={{
+        maxWidth: "92%",
+        maxHeight: "92%",
+        borderRadius: "12px",
+        boxShadow: "0 0 24px rgba(0,0,0,0.4)",
+        transition: "transform 0.25s ease",
+      }}
+      onMouseEnter={(e) =>
+        (e.currentTarget.style.transform = "scale(1.02)")
+      }
+      onMouseLeave={(e) =>
+        (e.currentTarget.style.transform = "scale(1.0)")
+      }
+    />
+  </div>
+)}
+
+                          </div>
+                        </div>
                       </SortableActivity>
                     </li>
                   );
@@ -915,19 +1265,82 @@ export default function DestinationsPage() {
 
         {/* Full-day route map */}
         {showRouteMap && data.itinerary?.[activeDay] && (
-          <FullDayRouteMap
-            dayIndex={activeDay}
-            itinerary={data.itinerary}
-            routesByDay={routesByDay}
-            fullDayBounds={fullDayBounds}
-            LeafletMap={LeafletMap}
-            userLocation={userLocation}
-          />
+          <div style={{ marginTop: 16 }}>
+            <div
+              style={{
+                background: "#fff",
+                borderRadius: 12,
+                boxShadow: "0 2px 6px rgba(0,0,0,.06)",
+                padding: 10,
+                border: "1px solid #eef2f7",
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 900,
+                  marginBottom: 8,
+                  color: "#0f172a",
+                }}
+              >
+                Full Day Route — Day {activeDay + 1}
+              </div>
+              <div style={{ width: "100%", height: "48vh" }}>
+                <LeafletMap
+                  lat={
+                    data.itinerary[activeDay].activities?.[0]?.coordinates?.lat ||
+                    1.29
+                  }
+                  lon={
+                    data.itinerary[activeDay].activities?.[0]?.coordinates?.lon ||
+                    103.85
+                  }
+                  popup={`Day ${activeDay + 1}`}
+                  routes={routesByDay[activeDay]?.segments || []}
+                  bounds={fullDayBounds}
+                  user={userLocation}
+                />
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
-      {/* global image popup */}
-      <PhotoModal image={popupImage} onClose={() => setPopupImage(null)} />
+      {/* ✅ Fixed SINGLE fullscreen popup */}
+      {popupImage && (
+        <div
+          className="overlay"
+          onClick={() => setPopupImage(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.85)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999,
+            cursor: "zoom-out",
+          }}
+        >
+          <img
+            className="modalImg"
+            src={popupImage}
+            alt="full"
+            style={{
+              maxWidth: "92%",
+              maxHeight: "92%",
+              borderRadius: "12px",
+              boxShadow: "0 0 24px rgba(0,0,0,0.4)",
+              transition: "transform 0.25s ease",
+            }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.transform = "scale(1.02)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.transform = "scale(1.0)")
+            }
+          />
+        </div>
+      )}
     </div>
   );
 }

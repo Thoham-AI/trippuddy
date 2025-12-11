@@ -1,92 +1,94 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 
 export default function MicButton({ onResult }) {
   const [listening, setListening] = useState(false);
-  const recognitionRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
 
-  useEffect(() => {
-    // Check browser support
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+  // --- START RECORDING USING MEDIARECORDER (Whisper-compatible) ---
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    if (!SpeechRecognition) {
-      console.warn(
-        "Speech recognition is not supported in this browser (iOS Safari, Firefox, Brave, etc.)."
-      );
-      return;
+      const recorder = new MediaRecorder(stream, {
+        mimeType: "audio/webm"
+      });
+
+      chunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      recorder.onstart = () => {
+        console.log("🎙 Whisper recording started");
+        setListening(true);
+      };
+
+      recorder.onstop = async () => {
+        console.log("🛑 Whisper recording stopped");
+        setListening(false);
+
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const form = new FormData();
+        form.append("file", blob, "speech.webm");
+
+        try {
+          const res = await fetch("/api/stt", {
+            method: "POST",
+            body: form
+          });
+
+          const data = await res.json();
+
+          if (data.text && typeof onResult === "function") {
+            onResult(data.text.trim());
+          } else {
+            console.warn("Whisper STT returned no text.");
+          }
+        } catch (err) {
+          console.error("Whisper STT error:", err);
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+    } catch (err) {
+      console.error("Microphone error:", err);
+      alert("Microphone access denied or unavailable.");
     }
+  }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = "en-US";
-    recognition.continuous = false;
-    recognition.interimResults = false;
+  // --- STOP RECORDING ---
+  function stopRecording() {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+    }
+  }
 
-    recognition.onstart = () => setListening(true);
-
-    recognition.onend = () => setListening(false);
-
-    recognition.onerror = (event) => {
-      const realError = event.error || event.message || event;
-      console.error("Speech recognition error:", realError);
-
-      // Display meaningful messages
-      if (event.error === "not-allowed") {
-        alert("Microphone access blocked. Allow mic permissions to use voice input.");
-      }
-      if (event.error === "network") {
-        alert("Network error. Speech recognition requires a secure HTTPS connection.");
-      }
-      // ADDED: User-friendly alert for the 'no-speech' error
-      if (event.error === "no-speech") {
-        alert("We didn't catch any speech. Please try speaking louder or check your microphone.");
-      }
-
-
-      setListening(false);
-    };
-
-    // FIX: Changed 'onResult' to 'onSpeech' in the original prompt's response, 
-    // but the component is imported in Chat.tsx as MicButton, 
-    // and the prop is used as 'onResult' in the provided code snippet from the user. 
-    // Assuming 'onResult' is the correct prop name for consistency with Chat.tsx.
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      onResult(transcript);
-    };
-
-    recognitionRef.current = recognition;
-  }, [onResult]);
-
+  // --- BUTTON CLICK HANDLER ---
   const handleClick = () => {
-    if (!recognitionRef.current) {
-      alert("Speech recognition is not supported on this device or browser.");
-      return;
-    }
-
     if (listening) {
-      recognitionRef.current.stop();
+      stopRecording();
     } else {
-      recognitionRef.current.start();
+      startRecording();
     }
   };
 
+  // --- UI (unchanged) ---
   return (
     <button
       onClick={handleClick}
-      // MODIFIED: Class names for the correct styling (teal/green rounded button with pencil icon)
       className={`p-3 rounded-full transition ${
-        listening 
-          ? "bg-red-500 text-white" // Indicate active listening with red
-          : "bg-[#009f9e] text-white hover:bg-[#008c8a]" // Use solid teal for the pencil icon
+        listening
+          ? "bg-red-500 text-white"
+          : "bg-[#009f9e] text-white hover:bg-[#008c8a]"
       }`}
       title={listening ? "Listening…" : "Start voice input"}
     >
-      <span className="text-xl">
-        {/* Using a pencil icon (✏️) to match the visual style in the second image */}
-        ✏️
-      </span>
+      <span className="text-xl">🎤</span>
     </button>
   );
 }

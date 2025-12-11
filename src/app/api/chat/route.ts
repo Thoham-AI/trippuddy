@@ -1,204 +1,91 @@
-import { NextResponse } from "next/server";
+// src/app/api/chat/route.ts
+import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
+export const runtime = "edge";
+
 const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY!,
 });
 
-// Types matching your frontend payload
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-};
+/**
+ * Accurate language detection using OpenAI
+ */
+async function detectLanguage(text: string): Promise<string> {
+  const detection = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content:
+          "Detect the language of the following text. Respond ONLY with a two-letter ISO language code. No explanation.",
+      },
+      { role: "user", content: text },
+    ],
+    max_tokens: 5,
+  });
 
-type RequestBody = {
-  messages?: ChatMessage[];
-  userLocation?: {
-    lat?: number | null;
-    lon?: number | null;
-    city?: string;
-    country?: string;
-  };
-};
-
-// Darwin CBD fallback if no location is provided
-const FALLBACK_LOCATION = {
-  lat: -12.4634,
-  lon: 130.8456,
-};
-
-// ---------- WEATHER HELPER ----------
-
-async function getWeather(lat: number, lon: number) {
-  try {
-    const apiKey = process.env.OPENWEATHER_KEY;
-    if (!apiKey) {
-      console.warn("⚠️ OPENWEATHER_KEY missing – skipping weather call");
-      return null;
-    }
-
-    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${apiKey}`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      console.warn("⚠️ OpenWeather response not OK:", res.status);
-      return null;
-    }
-
-    const data = await res.json();
-
-    return {
-      temp: Math.round(data.main?.temp ?? 0),
-      description: data.weather?.[0]?.description ?? "",
-      icon: data.weather?.[0]?.icon ?? "",
-    };
-  } catch (err) {
-    console.warn("⚠️ Weather fetch failed:", err);
-    return null;
-  }
+  return detection.choices[0]?.message?.content?.trim()?.toLowerCase() || "en";
 }
 
-// ---------- SYSTEM PROMPT (SMART TRAVEL ASSISTANT v2) ----------
+/**
+ * Clean system prompt (much more reliable for meaning understanding)
+ */
+function systemPrompt(lang: string) {
+  return `
+You are TripPuddy — a multilingual travel assistant.
 
-const BASE_SYSTEM_PROMPT = `
-You are TripPuddy v2, a friendly, expert AI travel buddy.
+GENERAL RULES:
+1. ALWAYS reply in the user's language: ${lang}.
+2. Keep responses natural, concise, friendly.
+3. DO NOT hallucinate places. If unsure → ask politely.
+4. DO NOT misinterpret greetings (bonjour, xin chào, hola, etc.)
+5. If the user greeting is ambiguous (bon jour spelled incorrectly), interpret it as a GREETING first.
+6. Only interpret a message as a place if:
+   - It matches a known place, AND
+   - The user intent is about travel/location.
 
-Your job:
-- Understand what the user *really* wants (food, cafés, bars, viewpoints, nature, museums, day plans, etc.).
-- Give specific, useful, and realistic recommendations (not generic advice).
-- Use the current weather and location context when it’s helpful.
-- Be concise but warm. Use emojis where they add clarity (🌅🍜🚶‍♂️🏖️✨).
-- When relevant, propose a short itinerary (1 day or a few hours) broken into morning / afternoon / evening or time blocks.
+LANGUAGE BEHAVIOR:
+7. NEVER switch languages unless the user switches.
+8. Write naturally and fluently in ${lang}.
 
-Behavior rules:
-1. GREETINGS / VAGUE INPUT
-   - If the user just says "hey", "hello", "hi", etc:
-       • Give a friendly 1–2 sentence greeting.
-       • Then ask a single clarifying question like:
-         "What are you in the mood for today – cafés, food, sightseeing, or planning your day?"
-   - Do NOT ask multiple questions at once.
+GREETING RULES:
+9. If the message is a greeting (even if misspelled):
+   - Respond naturally in the same language.
+   - DO NOT try to make an itinerary.
+   - DO NOT treat it as a location.
 
-2. NEARBY / PLACE SEARCH ("find a cafe nearby", "good dinner place", "rooftop bar")
-   - Treat as a POI search request.
-   - Suggest 3–5 specific places, each with:
-       • name
-       • rough area or neighbourhood if known
-       • 1–2 sentence reason (vibe, view, food type, why it fits the query)
-   - If it’s raining or the weather is poor, gently steer toward indoor-friendly options.
-   - Mention if a place is better for:
-       • laptops / working
-       • romantic date
-       • local vibe / street food
-       • families
-       • budget vs premium
-
-3. ITINERARIES ("plan a 1-day trip", "2 days in Singapore", "afternoon itinerary")
-   - Create a realistic, time-ordered plan.
-   - Use time blocks or approximate times (e.g. "09:00–11:00 Gardens by the Bay").
-   - Combine sightseeing, food, and brief rest moments.
-   - Keep it achievable in one day; don't over-pack.
-
-4. FOLLOW-UP SUGGESTIONS
-   - End most answers with 2–3 bullet suggestions for next steps, such as:
-       • "Want me to tweak this for a rainy day?"  
-       • "Prefer more hidden-gem local spots?"  
-       • "Want this as a step-by-step day plan?"
-
-5. STYLE
-   - Always respond in clear English.
-   - Be positive, encouraging, and practical.
-   - Do NOT talk about being an AI model or how you were trained.
+CLARIFICATION:
+10. If unsure whether the user meant a place or a phrase:
+    Ask ONE polite clarification question in the user's language.
 `;
+}
 
-// ---------- ROUTE HANDLER ----------
-
-export async function POST(req: Request) {
+/**
+ * Chat route handler
+ */
+export async function POST(req: NextRequest) {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      console.error("❌ Missing OPENAI_API_KEY");
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Server misconfigured: missing OpenAI API key",
-        },
-        { status: 500 }
-      );
-    }
+    const body = await req.json();
+    const lastMessage = body.messages?.[body.messages.length - 1]?.content || "";
 
-    const body = (await req.json()) as RequestBody;
-    const messages = body.messages ?? [];
-    const userLocation = body.userLocation ?? {};
-
-    // Decide which coordinates to use
-    const lat =
-      typeof userLocation.lat === "number" ? userLocation.lat : FALLBACK_LOCATION.lat;
-    const lon =
-      typeof userLocation.lon === "number" ? userLocation.lon : FALLBACK_LOCATION.lon;
-
-    const weather = await getWeather(lat, lon);
-
-    const locationSummary =
-      userLocation.city || userLocation.country
-        ? `${userLocation.city ?? ""}${userLocation.city && userLocation.country ? ", " : ""}${
-            userLocation.country ?? ""
-          }`
-        : "Unknown city (Darwin fallback if in doubt)";
-
-    const weatherSummary = weather
-      ? `${weather.temp}°C, ${weather.description}`
-      : "Weather data not available";
-
-    // Build a short context system message with runtime info
-    const runtimeContext = `
-Current user context:
-- Approx location: ${locationSummary}
-- Coordinates used: lat ${lat}, lon ${lon}
-- Weather: ${weatherSummary}
-`.trim();
-
-    // Prepare messages for OpenAI
-    const openAiMessages = [
-      {
-        role: "system" as const,
-        content: BASE_SYSTEM_PROMPT,
-      },
-      {
-        role: "system" as const,
-        content: runtimeContext,
-      },
-      ...messages.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
-    ];
+    const lang = await detectLanguage(lastMessage);
 
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: openAiMessages,
-      temperature: 0.8,
-      max_tokens: 800,
+      messages: [
+        { role: "system", content: systemPrompt(lang) },
+        ...body.messages,
+      ],
+      max_tokens: 500,
+      temperature: 0.5,
     });
 
-    const reply =
-      completion.choices[0]?.message?.content ??
-      "I'm here to help with your trip plans! Tell me what you're in the mood for. 🌍";
+    const reply = completion.choices[0].message.content;
 
-    return NextResponse.json(
-      {
-        ok: true,
-        reply,
-      },
-      { status: 200 }
-    );
-  } catch (err: any) {
-    console.error("🔥 /api/chat error:", err);
-
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "TripPuddy ran into a problem while generating a reply.",
-        details: typeof err?.message === "string" ? err.message : "Unknown error",
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ reply });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ reply: "⚠️ Error in /api/chat" });
   }
 }

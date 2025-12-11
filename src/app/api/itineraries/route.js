@@ -1,6 +1,7 @@
-// ===============================
-// FULLY FIXED BACKEND — route.js
-// ===============================
+"use server";
+// =======================================
+// TripPuddy — Smart Backend v5 (Stable)
+// =======================================
 
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
@@ -13,7 +14,7 @@ const client = new OpenAI({
 });
 
 // ----------------------------------------------
-// WEATHER
+// OPENWEATHER
 // ----------------------------------------------
 async function getWeather(lat, lon) {
   try {
@@ -30,7 +31,7 @@ async function getWeather(lat, lon) {
 }
 
 // ----------------------------------------------
-// GOOGLE PLACES (TEXT SEARCH + DETAILS)
+// GOOGLE PLACES
 // ----------------------------------------------
 async function fetchPlaceDetails(query, apiKey) {
   try {
@@ -45,7 +46,6 @@ async function fetchPlaceDetails(query, apiKey) {
 
     const placeId = item.place_id;
 
-    // FIX: include photos so activity.image exists
     const detailURL = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,geometry,opening_hours,photos,types,formatted_address,url&key=${apiKey}`;
 
     const dRes = await fetch(detailURL);
@@ -72,7 +72,7 @@ async function fetchPlaceDetails(query, apiKey) {
 }
 
 // ----------------------------------------------
-// GOOGLE PHOTO URL
+// GOOGLE PHOTO
 // ----------------------------------------------
 function makePhotoURL(photoRef, apiKey) {
   if (!photoRef) return null;
@@ -101,31 +101,23 @@ async function unsplashFallback(query) {
 }
 
 // ----------------------------------------------
-// UPGRADED GPT PROMPT
+// GPT PROMPT — IMPROVED
 // ----------------------------------------------
 function buildGPTPrompt(userPrompt, weather) {
   return `
-You are an expert travel planner. Provide a **fully detailed realistic itinerary**.
+You are TripPuddy — an expert AI travel planner.
 
 RULES:
-- Output ONLY valid JSON (no markdown).
-- At least 4 rich activities per day.
-- Each activity MUST include:
-  • arrival_time  
-  • duration_minutes  
-  • suggested_departure_time  
-  • distance_km_from_previous  
-  • travel_time_minutes_from_previous  
-  • description (4–6 sentences)  
-  • category (food, culture, nature, adventure, relaxing, shopping, viewpoint)
-  • google_maps_query (specific, unique place)
+- Detect exact number of days from user prompt.
+- ALWAYS output EXACTLY that number of days.
+- 4–7 activities per day.
+- Each day must start in the MORNING (08:00–09:30).
+- Include realistic arrival_time, duration_minutes, and departure_time.
+- Use weather to adjust outdoor activities.
+- Every activity must have a real Google-searchable place.
 
-- Darwin wet season (Nov–Apr):
-  • Mindil Sunset Market is closed.
-  • Avoid sunset markets in the morning.
-  • Avoid beaches/lookouts during heavy rain.
+OUTPUT FORMAT (STRICT JSON ONLY):
 
-JSON FORMAT:
 {
   "days": [
     {
@@ -152,30 +144,42 @@ JSON FORMAT:
   ]
 }
 
-User request: "${userPrompt}"
-Weather: ${JSON.stringify(weather)}
+USER PROMPT: "${userPrompt}"
+WEATHER: ${JSON.stringify(weather)}
 `;
 }
 
 // ----------------------------------------------
-// NORMALIZE RAW GPT OUTPUT
+// NORMALIZE ITINERARY — MULTI-DAY SAFE
 // ----------------------------------------------
 function normalizeItinerary(raw) {
-  if (!raw) return { days: [{ day: 1, activities: [] }] };
+  if (!raw || !raw.days) return { days: [] };
 
-  if (Array.isArray(raw.days)) return raw;
+  if (!Array.isArray(raw.days)) return { days: [] };
 
-  if (Array.isArray(raw.activities))
-    return { days: [{ day: 1, activities: raw.activities }] };
-
-  if (raw.itinerary?.activities)
-    return { days: [{ day: 1, activities: raw.itinerary.activities }] };
-
-  return { days: [{ day: 1, activities: [] }] };
+  return raw;
 }
 
 // ----------------------------------------------
-// VALIDATE + FIX with REAL GOOGLE DATA
+// FIX START TIMES (FIRST ACTIVITY)
+// ----------------------------------------------
+function ensureMorningStart(days) {
+  for (const day of days) {
+    if (!day.activities?.length) continue;
+
+    const first = day.activities[0];
+
+    first.time_of_day = "Morning";
+    first.arrival_time = first.arrival_time || "09:00";
+    first.suggested_departure_time =
+      first.suggested_departure_time || "10:30";
+    first.duration_minutes = first.duration_minutes || 90;
+  }
+  return days;
+}
+
+// ----------------------------------------------
+// VALIDATE + FIX ACTIVITIES — NON-DESTRUCTIVE
 // ----------------------------------------------
 async function validateAndFixActivities(days, apiKey, weather) {
   const month = new Date().getMonth() + 1;
@@ -183,83 +187,87 @@ async function validateAndFixActivities(days, apiKey, weather) {
   const heavyRain =
     weather?.weather?.[0]?.main?.toLowerCase()?.includes("rain") ?? false;
 
+  const weatherLink = weather
+    ? `https://openweathermap.org/weathermap?basemap=map&layers=temperature&lat=${weather.coord.lat}&lon=${weather.coord.lon}&zoom=10`
+    : null;
+
   for (const day of days) {
     const fixed = [];
 
     for (const a of day.activities) {
-      const q = a.google_maps_query || a.title;
+      const query = a.google_maps_query || a.title;
+      const place = await fetchPlaceDetails(query, apiKey);
 
-      const place = await fetchPlaceDetails(q, apiKey);
-      if (!place) continue;
-
-      if (wetSeason && /mindil/i.test(place.name)) continue;
-
-      if (
-        a.time_of_day?.toLowerCase()?.includes("morning") &&
-        /sunset|market/i.test(place.name)
-      )
+      // 🔥 DO NOT REMOVE ACTIVITY — fallback instead
+      if (!place) {
+        fixed.push({
+          ...a,
+          title: a.title || query,
+          image: null,
+          latitude: null,
+          longitude: null,
+          google_maps_query: query,
+          weather: weather
+            ? {
+                temp: weather?.main?.temp ?? null,
+                description: weather?.weather?.[0]?.description ?? null,
+                icon: weather?.weather?.[0]?.icon ?? null,
+                link: weatherLink,
+              }
+            : null,
+        });
         continue;
+      }
 
+      // Weather avoidance logic preserved
+      if (wetSeason && /mindil/i.test(place.name)) continue;
       if (
         heavyRain &&
         /beach|lookout|reserve|trail|national|cliff|coast/i.test(place.name)
       )
         continue;
 
-      // IMAGE FIX: Google photo or Unsplash fallback
       const image =
- 	 makePhotoURL(place.photo_reference, apiKey) ||
-	  (await unsplashFallback(place.name)) ||
- 	 null;
+        makePhotoURL(place.photo_reference, apiKey) ||
+        (await unsplashFallback(place.name));
 
-fixed.push({
-  ...a,
-  title: place.name,
-  latitude: place.lat,
-  longitude: place.lon,
-  google_maps_query: place.name,
-  image,
+      fixed.push({
+        ...a,
+        title: place.name,
+        latitude: place.lat,
+        longitude: place.lon,
+        google_maps_query: place.name,
+        image,
+        weather: weather
+          ? {
+              temp: weather?.main?.temp ?? null,
+              description: weather?.weather?.[0]?.description ?? null,
+              icon: weather?.weather?.[0]?.icon ?? null,
+              link: weatherLink,
+            }
+          : null,
+      });
+    }
 
-  // ⭐ ADD THIS WEATHER BLOCK ⭐
-  weather: {
-    temp: weather?.main?.temp ?? null,
-    description: weather?.weather?.[0]?.description ?? null,
-    icon: weather?.weather?.[0]?.icon ?? null,
-    link: weather?.id ? `https://openweathermap.org/city/${weather.id}` : null,
-  },
-});
+    // Ensure each day has at least 1 activity
+    if (fixed.length === 0) {
+      fixed.push({
+        title: "Darwin Waterfront Precinct",
+        time_of_day: "Morning",
+        arrival_time: "09:00",
+        suggested_departure_time: "10:30",
+        google_maps_query: "Darwin Waterfront Precinct",
+        latitude: -12.4662,
+        longitude: 130.8464,
+        description: "Relax at the lagoon and explore the waterfront.",
+        estimated_cost: "Free",
+      });
     }
 
     day.activities = fixed;
   }
 
   return days;
-}
-
-// ----------------------------------------------
-// DARWIN FALLBACK (unchanged)
-// ----------------------------------------------
-function buildFallbackDarwin() {
-  return {
-    days: [
-      {
-        day: 1,
-        activities: [
-          {
-            title: "Darwin Waterfront Precinct",
-            category: "relaxing",
-            time_of_day: "Morning",
-            estimated_cost: "Free–$15",
-            google_maps_query: "Darwin Waterfront Precinct",
-            latitude: -12.4662,
-            longitude: 130.8464,
-            description:
-              "Relax, swim or enjoy cafes by the waterfront."
-          }
-        ]
-      }
-    ]
-  };
 }
 
 // ----------------------------------------------
@@ -275,44 +283,46 @@ export async function POST(req) {
     let { userPrompt, userLocation } = data;
 
     if (!userLocation?.lat || !userLocation?.lon) {
-      console.log("⚠ No user location → Darwin fallback");
       userLocation = { lat: -12.4634, lon: 130.8456 };
     }
 
     const weather = await getWeather(userLocation.lat, userLocation.lon);
 
+    // Build GPT prompt
     const gptPrompt = buildGPTPrompt(userPrompt, weather);
 
+    // GPT CALL
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "Return ONLY VALID JSON." },
-        { role: "user", content: gptPrompt }
+        { role: "system", content: "Return ONLY valid JSON. Never markdown." },
+        { role: "user", content: gptPrompt },
       ],
-      temperature: 0.95, // FIX: richer itineraries
+      temperature: 0.5,
+      max_tokens: 6000,
     });
 
     let raw = completion.choices[0].message.content;
     raw = raw.replace(/```json|```/g, "").trim();
 
-    let itinerary = {};
+    let itinerary;
     try {
       itinerary = JSON.parse(raw);
     } catch {
-      itinerary = {};
+      itinerary = { days: [] };
     }
 
     itinerary = normalizeItinerary(itinerary);
 
+    // Fix morning start
+    itinerary.days = ensureMorningStart(itinerary.days);
+
+    // Validate and fix activities
     itinerary.days = await validateAndFixActivities(
       itinerary.days,
       process.env.GOOGLE_PLACES_API_KEY,
       weather
     );
-
-    if (itinerary.days[0].activities.length === 0) {
-      itinerary = buildFallbackDarwin();
-    }
 
     return NextResponse.json(
       { ok: true, itinerary, weather, userLocation },
