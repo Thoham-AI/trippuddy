@@ -16,10 +16,10 @@ export default function RootLayout({ children }) {
           dangerouslySetInnerHTML={{
             __html: `
               (function () {
-                var script = document.createElement("script");
-                script.async = 1;
-                script.src = 'https://emrldtp.com/NDgwNzQz.js?t=480743';
-                document.head.appendChild(script);
+                  var script = document.createElement("script");
+                  script.async = 1;
+                  script.src = 'https://emrldtp.com/NDgwNzQz.js?t=480743';
+                  document.head.appendChild(script);
               })();
             `,
           }}
