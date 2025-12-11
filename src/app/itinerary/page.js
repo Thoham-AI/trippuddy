@@ -5,9 +5,9 @@ import dynamic from "next/dynamic";
 import Papa from "papaparse";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import BudgetSummary from "@/components/itinerary/BudgetSummary";
-import TextModal from "@/components/itinerary/TextModal";
-import TripMap from "@/components/itinerary/TripMap";
+import BudgetSummary from "@/components/itinerary/BudgetSummary.js";
+import TextModal from "@/components/itinerary/TextModal.js";
+import TripMap from "@/components/itinerary/TripMap.js";
 
 import {
   DndContext,
@@ -21,10 +21,10 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-import ActivityCard from "@/components/itinerary/ActivityCard";
+import ActivityCard from "@/components/itinerary/ActivityCard.js";
 import DayHeaderControls from "@/components/itinerary/DayHeaderControls";
-import PhotoModal from "@/components/itinerary/PhotoModal";
-import FullDayRouteMap from "@/components/itinerary/FullDayRouteMap";
+import PhotoModal from "@/components/itinerary/PhotoModal.js";
+import FullDayRouteMap from "@/components/itinerary/FullDayRouteMap.js";
 
 // Leaflet map (client only)
 const LeafletMap = dynamic(() => import("@/components/LeafletMap"), {
