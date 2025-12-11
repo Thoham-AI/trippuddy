@@ -989,24 +989,24 @@ export default function DestinationsPage() {
                   const singleSeg = segmentForIndex(daySegments, i);
 
                   return (
-                    <li key={`act-${i}`} style={{ marginBottom: 18 }}>
-                      <SortableActivity id={`act-${i}`}>
-                        <div
-                          className="card"
-                          style={{
-                            background: "#fff",
-                            padding: 14,
-                            borderRadius: 12,
-                            display: "grid",
-                            gridTemplateColumns: "1fr 1fr",
-                            gap: 12,
-                            boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
-                            position: "relative",
-                            border: "1px solid #eef2f7",
-                          }}
-                        >
-                          {/* LEFT */}
-                          <div className="left">
+<li key={`act-${i}`} style={{ marginBottom: 18 }}>
+  <SortableActivity id={`act-${i}`}>
+    <div
+      className="card"
+      style={{
+        background: "#fff",
+        padding: 14,
+        borderRadius: 12,
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 12,
+        boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+        position: "relative",
+        border: "1px solid #eef2f7",
+      }}
+    >
+      {/* LEFT SIDE */}
+      <div className="left">
                             <div
   className="title"
   style={{ fontSize: 18, fontWeight: 700 }}
