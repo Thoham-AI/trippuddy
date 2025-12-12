@@ -1103,15 +1103,14 @@ return (
   )}
 </div>
 
-                            {act.weatherTemp !== null && (
+  {act.weatherTemp !== null && (
   <div
     className="weather"
     role={act.weatherLink ? "button" : undefined}
     onClick={() => {
-	  const link = act.weather?.link || act.weatherLink;
-	  if (link) window.open(link, "_blank");
-	}}
-
+      const link = act.weather?.link || act.weatherLink;
+      if (link) window.open(link, "_blank");
+    }}
     style={{
       display: "flex",
       alignItems: "center",
@@ -1124,14 +1123,16 @@ return (
     }}
   >
     <img
-  src={`https://openweathermap.org/img/wn/${(act.weather?.icon || act.weatherIcon)}@2x.png`}
-  style={{ width: 32, height: 32 }}
-/>
-<span>
-  {Math.round(act.weather?.temp ?? act.weatherTemp)}°C — 
-  {act.weather?.description ?? act.weatherDesc}
-</span>
-)}
+      src={`https://openweathermap.org/img/wn/${act.weather?.icon || act.weatherIcon}@2x.png`}
+      style={{ width: 32, height: 32 }}
+    />
+
+    <span>
+      {Math.round(act.weather?.temp ?? act.weatherTemp)}°C —{" "}
+      {act.weather?.description ?? act.weatherDesc}
+    </span>
+  </div>   {/* ✔️ PROPERLY CLOSED */}
+)}         {/* ✔️ VALID ENDING */}
 
                             {act.details && (
                               <div
