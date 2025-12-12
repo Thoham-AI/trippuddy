@@ -1,3 +1,5 @@
+export const runtime = "nodejs";
+
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
@@ -28,6 +30,9 @@ export async function POST(req) {
     return NextResponse.json({ text });
   } catch (err) {
     console.error("packing-list error", err);
-    return NextResponse.json({ text: "Error generating packing list." }, { status: 500 });
+    return NextResponse.json(
+      { text: "Error generating packing list." },
+      { status: 500 }
+    );
   }
 }
