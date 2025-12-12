@@ -1040,7 +1040,7 @@ return (
             </div>
           )}
 
-          {/* LOCATION + FLAG + LINK */}
+          {/* LOCATION */}
           <div
             style={{
               display: "flex",
@@ -1123,18 +1123,12 @@ return (
           {act.cost_estimate && (
             <div
               className="cost"
-              style={{
-                marginTop: 6,
-                color: "#15803d",
-                fontWeight: 700,
-              }}
+              style={{ marginTop: 6, color: "#15803d", fontWeight: 700 }}
             >
               💰 {act.cost_estimate}
             </div>
           )}
-
         </div>
-        {/* ================= END LEFT SIDE ================= */}
 
         {/* ================= RIGHT SIDE ================= */}
         <div
@@ -1145,8 +1139,7 @@ return (
             gap: 8,
           }}
         >
-
-          {/* ACTIVITY IMAGE */}
+          {/* IMAGE */}
           {act.image && (
             <img
               src={act.image}
@@ -1204,84 +1197,8 @@ return (
             </div>
           )}
         </div>
-                ))}
-              </ul>
-            </SortableContext>
-          </DndContext>
-        )}
 
-        {/* Full-day route map */}
-        {showRouteMap && data.itinerary?.[activeDay] && (
-          <div style={{ marginTop: 16 }}>
-            <div
-              style={{
-                background: "#fff",
-                borderRadius: 12,
-                boxShadow: "0 2px 6px rgba(0,0,0,.06)",
-                padding: 10,
-                border: "1px solid #eef2f7",
-              }}
-            >
-              <div
-                style={{
-                  fontWeight: 900,
-                  marginBottom: 8,
-                  color: "#0f172a",
-                }}
-              >
-                Full Day Route — Day {activeDay + 1}
-              </div>
-              <div style={{ width: "100%", height: "48vh" }}>
-                <LeafletMap
-                  lat={
-                    data.itinerary[activeDay].activities?.[0]?.coordinates?.lat ||
-                    1.29
-                  }
-                  lon={
-                    data.itinerary[activeDay].activities?.[0]?.coordinates?.lon ||
-                    103.85
-                  }
-                  popup={`Day ${activeDay + 1}`}
-                  routes={routesByDay[activeDay]?.segments || []}
-                  bounds={fullDayBounds}
-                  user={userLocation}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-      </div> {/* END inner page container */}
-
-      {/* SINGLE fullscreen popup */}
-      {popupImage && (
-        <div
-          className="overlay"
-          onClick={() => setPopupImage(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.85)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 9999,
-            cursor: "zoom-out",
-          }}
-        >
-          <img
-            className="modalImg"
-            src={popupImage}
-            alt="full"
-            style={{
-              maxWidth: "92%",
-              maxHeight: "92%",
-              borderRadius: "12px",
-              boxShadow: "0 0 24px rgba(0,0,0,0.4)",
-              transition: "transform 0.25s ease",
-            }}
-          />
-        </div>
-      )}
-    </div>  {/* ✅ CLOSES the main wrapper from line 744 */}
-  );
-}
+      </div> {/* END card */}
+    </SortableActivity>
+  </li>
+);
