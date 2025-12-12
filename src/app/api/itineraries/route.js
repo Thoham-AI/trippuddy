@@ -1,7 +1,8 @@
+// src/app/api/itineraries/route.js
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import handleItineraryRequest from "./handler.node.js";
+import handleItineraryRequest from "./handler.node.mjs";
 
 export async function POST(req) {
   try {

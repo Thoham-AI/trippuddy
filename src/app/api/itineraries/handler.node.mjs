@@ -1,25 +1,76 @@
-// PURE NODE-ONLY MODULE — Never analyzed by RSC or Edge
-// TripPuddy — Smart Backend v5 (Stable)
+// src/app/api/itineraries/handler.node.mjs
+// PURE NODE ESM MODULE — not a Next.js route, safe to import from route.js
 
 import OpenAI from "openai";
 
-// ----------------------------------------------
-// GPT CLIENT
-// ----------------------------------------------
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+/* ------------------------------------------------------------------
+   CONFIG & CONSTANTS
+-------------------------------------------------------------------*/
 
-// ----------------------------------------------
-// OPENWEATHER
-// ----------------------------------------------
+const OPENAI_MODEL = "gpt-4o-mini";
+const OPENAI_MAX_TOKENS = 6000;
+
+const DEFAULT_LOCATION = {
+  lat: -12.4634,
+  lon: 130.8456, // Darwin
+};
+
+const MAX_DAYS = 14; // hard cap for safety
+const MAX_ACTIVITIES_PER_DAY = 10;
+const FETCH_TIMEOUT_MS = 8000;
+
+/* ------------------------------------------------------------------
+   UTIL: SAFE FETCH WITH TIMEOUT
+-------------------------------------------------------------------*/
+
+async function safeFetch(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return res;
+  } catch (err) {
+    console.error("safeFetch error:", err?.message || err);
+    return null;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+/* ------------------------------------------------------------------
+   OPENAI CLIENT (lazy getter for better failure messages)
+-------------------------------------------------------------------*/
+
+function getOpenAIClient() {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
+  return new OpenAI({ apiKey: key });
+}
+
+/* ------------------------------------------------------------------
+   OPENWEATHER
+-------------------------------------------------------------------*/
+
 async function getWeather(lat, lon) {
   try {
     const key = process.env.OPENWEATHER_API_KEY;
-    if (!key) return null;
+    if (!key) {
+      console.warn("OPENWEATHER_API_KEY not set – skipping weather.");
+      return null;
+    }
 
     const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${key}`;
-    const res = await fetch(url);
+    const res = await safeFetch(url);
+    if (!res || !res.ok) {
+      console.warn("Weather fetch failed:", res?.status);
+      return null;
+    }
     return await res.json();
   } catch (err) {
     console.error("Weather error:", err);
@@ -27,16 +78,24 @@ async function getWeather(lat, lon) {
   }
 }
 
-// ----------------------------------------------
-// GOOGLE PLACES
-// ----------------------------------------------
+/* ------------------------------------------------------------------
+   GOOGLE PLACES
+-------------------------------------------------------------------*/
+
 async function fetchPlaceDetails(query, apiKey) {
+  if (!apiKey) {
+    console.warn("GOOGLE_PLACES_API_KEY not set – skipping place details.");
+    return null;
+  }
+
   try {
     const textURL = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(
       query
     )}&key=${apiKey}`;
 
-    const tRes = await fetch(textURL);
+    const tRes = await safeFetch(textURL);
+    if (!tRes || !tRes.ok) return null;
+
     const tJson = await tRes.json();
     const item = tJson.results?.[0];
     if (!item) return null;
@@ -45,7 +104,9 @@ async function fetchPlaceDetails(query, apiKey) {
 
     const detailURL = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,geometry,opening_hours,photos,types,formatted_address,url&key=${apiKey}`;
 
-    const dRes = await fetch(detailURL);
+    const dRes = await safeFetch(detailURL);
+    if (!dRes || !dRes.ok) return null;
+
     const dJson = await dRes.json();
     if (!dJson.result) return null;
 
@@ -68,38 +129,46 @@ async function fetchPlaceDetails(query, apiKey) {
   }
 }
 
-// ----------------------------------------------
-// GOOGLE PHOTO URL
-// ----------------------------------------------
+/* ------------------------------------------------------------------
+   GOOGLE PHOTO URL
+-------------------------------------------------------------------*/
+
 function makePhotoURL(photoRef, apiKey) {
-  if (!photoRef) return null;
+  if (!photoRef || !apiKey) return null;
   return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1600&photoreference=${photoRef}&key=${apiKey}`;
 }
 
-// ----------------------------------------------
-// UNSPLASH FALLBACK
-// ----------------------------------------------
+/* ------------------------------------------------------------------
+   UNSPLASH FALLBACK
+-------------------------------------------------------------------*/
+
 async function unsplashFallback(query) {
   const key = process.env.UNSPLASH_KEY;
-  if (!key) return null;
+  if (!key) {
+    console.warn("UNSPLASH_KEY not set – no image fallback.");
+    return null;
+  }
 
   try {
     const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(
       query
     )}&client_id=${key}&orientation=landscape&per_page=1`;
 
-    const res = await fetch(url);
-    const json = await res.json();
+    const res = await safeFetch(url);
+    if (!res || !res.ok) return null;
 
+    const json = await res.json();
     return json.results?.[0]?.urls?.regular || null;
-  } catch {
+  } catch (err) {
+    console.error("unsplashFallback error:", err);
     return null;
   }
 }
 
-// ----------------------------------------------
-// GPT PROMPT
-// ----------------------------------------------
+/* ------------------------------------------------------------------
+   GPT PROMPT
+-------------------------------------------------------------------*/
+
 function buildGPTPrompt(userPrompt, weather) {
   return `
 You are TripPuddy — an expert AI travel planner.
@@ -146,18 +215,30 @@ WEATHER: ${JSON.stringify(weather)}
 `;
 }
 
-// ----------------------------------------------
-// NORMALIZE ITINERARY
-// ----------------------------------------------
+/* ------------------------------------------------------------------
+   NORMALIZE ITINERARY
+-------------------------------------------------------------------*/
+
 function normalizeItinerary(raw) {
-  if (!raw || !raw.days) return { days: [] };
-  if (!Array.isArray(raw.days)) return { days: [] };
-  return raw;
+  if (!raw || !raw.days || !Array.isArray(raw.days)) {
+    return { days: [] };
+  }
+
+  // Hard caps for safety
+  const limitedDays = raw.days.slice(0, MAX_DAYS).map((day, index) => ({
+    day: day.day ?? index + 1,
+    activities: Array.isArray(day.activities)
+      ? day.activities.slice(0, MAX_ACTIVITIES_PER_DAY)
+      : [],
+  }));
+
+  return { days: limitedDays };
 }
 
-// ----------------------------------------------
-// FIX FIRST ACTIVITY START TIME
-// ----------------------------------------------
+/* ------------------------------------------------------------------
+   FIX FIRST ACTIVITY START TIMES
+-------------------------------------------------------------------*/
+
 function ensureMorningStart(days) {
   for (const day of days) {
     if (!day.activities?.length) continue;
@@ -173,9 +254,10 @@ function ensureMorningStart(days) {
   return days;
 }
 
-// ----------------------------------------------
-// VALIDATE / FIX ACTIVITIES
-// ----------------------------------------------
+/* ------------------------------------------------------------------
+   VALIDATE / FIX ACTIVITIES
+-------------------------------------------------------------------*/
+
 async function validateAndFixActivities(days, apiKey, weather) {
   const month = new Date().getMonth() + 1;
   const wetSeason = month >= 11 || month <= 4;
@@ -189,17 +271,20 @@ async function validateAndFixActivities(days, apiKey, weather) {
   for (const day of days) {
     const fixed = [];
 
-    for (const a of day.activities) {
+    for (const a of day.activities || []) {
       const query = a.google_maps_query || a.title;
+      if (!query) continue;
+
       const place = await fetchPlaceDetails(query, apiKey);
 
+      // Fallback: keep activity even if place lookup fails
       if (!place) {
         fixed.push({
           ...a,
           title: a.title || query,
           image: null,
-          latitude: null,
-          longitude: null,
+          latitude: a.latitude ?? null,
+          longitude: a.longitude ?? null,
           google_maps_query: query,
           weather: weather
             ? {
@@ -213,12 +298,14 @@ async function validateAndFixActivities(days, apiKey, weather) {
         continue;
       }
 
+      // Weather avoidance logic preserved
       if (wetSeason && /mindil/i.test(place.name)) continue;
       if (
         heavyRain &&
         /beach|lookout|reserve|trail|national|cliff|coast/i.test(place.name)
-      )
+      ) {
         continue;
+      }
 
       const image =
         makePhotoURL(place.photo_reference, apiKey) ||
@@ -242,6 +329,7 @@ async function validateAndFixActivities(days, apiKey, weather) {
       });
     }
 
+    // Ensure each day has at least 1 activity
     if (fixed.length === 0) {
       fixed.push({
         title: "Darwin Waterfront Precinct",
@@ -262,44 +350,71 @@ async function validateAndFixActivities(days, apiKey, weather) {
   return days;
 }
 
-// ----------------------------------------------
-// MAIN HANDLER (NODE ONLY)
-// ----------------------------------------------
-export default async function handleItineraryRequest(data) {
-  try {
-    let { userPrompt, userLocation } = data;
+/* ------------------------------------------------------------------
+   MAIN EXPORT — Node-only handler
+-------------------------------------------------------------------*/
 
-    if (!userLocation?.lat || !userLocation?.lon) {
-      userLocation = { lat: -12.4634, lon: 130.8456 };
+export default async function handleItineraryRequest(input) {
+  try {
+    const data = input && typeof input === "object" ? input : {};
+
+    let userPrompt = data.userPrompt;
+    if (typeof userPrompt !== "string" || !userPrompt.trim()) {
+      return {
+        ok: false,
+        error: "userPrompt is required and must be a non-empty string.",
+      };
+    }
+    userPrompt = userPrompt.trim();
+
+    let userLocation = data.userLocation;
+    if (
+      !userLocation ||
+      typeof userLocation.lat !== "number" ||
+      typeof userLocation.lon !== "number"
+    ) {
+      userLocation = { ...DEFAULT_LOCATION };
     }
 
+    // External data
     const weather = await getWeather(userLocation.lat, userLocation.lon);
 
+    // Build prompt for GPT
     const gptPrompt = buildGPTPrompt(userPrompt, weather);
 
-    // GPT CALL
+    // OpenAI call
+    const client = getOpenAIClient();
+
     const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: OPENAI_MODEL,
       messages: [
-        { role: "system", content: "Return ONLY valid JSON. Never markdown." },
+        {
+          role: "system",
+          content: "Return ONLY valid JSON. Never markdown.",
+        },
         { role: "user", content: gptPrompt },
       ],
       temperature: 0.5,
-      max_tokens: 6000,
+      max_tokens: OPENAI_MAX_TOKENS,
     });
 
-    let raw = completion.choices[0].message.content;
+    let raw = completion.choices[0]?.message?.content || "";
     raw = raw.replace(/```json|```/g, "").trim();
 
     let itinerary;
     try {
       itinerary = JSON.parse(raw);
-    } catch {
+    } catch (err) {
+      console.error("Failed to parse GPT JSON:", err);
       itinerary = { days: [] };
     }
 
     itinerary = normalizeItinerary(itinerary);
+
+    // Fix morning start
     itinerary.days = ensureMorningStart(itinerary.days);
+
+    // Validate and fix activities
     itinerary.days = await validateAndFixActivities(
       itinerary.days,
       process.env.GOOGLE_PLACES_API_KEY,
@@ -308,11 +423,11 @@ export default async function handleItineraryRequest(data) {
 
     return { ok: true, itinerary, weather, userLocation };
   } catch (err) {
-    console.error("🔥 SERVER ERROR:", err);
+    console.error("🔥 SERVER ERROR (handler.node.mjs):", err);
     return {
       ok: false,
       error: "Itinerary generation failed",
-      details: String(err),
+      details: String(err?.message || err),
     };
   }
 }
