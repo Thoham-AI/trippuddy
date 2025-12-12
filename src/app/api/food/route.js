@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
+export const runtime = "nodejs";
+
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(req) {
   try {
-    const { activity, location } = await req.json();
+    const body = await req.json();
+
+    // Support multiple input formats
+    const activity = body.activity || { title: body.userPrompt || "" };
+    const location = body.location || body.userLocation || {};
 
     const prompt = `
 User is near: ${activity.title}
@@ -23,7 +29,8 @@ For each place, give:
 - Rough price level ($, $$, $$$)
 - 1 short tip (what to order)
 
-Return in bullet points.`;
+Return in bullet points.
+`;
 
     const res = await client.chat.completions.create({
       model: "gpt-4o-mini",
@@ -37,8 +44,12 @@ Return in bullet points.`;
 
     const text = res.choices[0].message.content || "";
     return NextResponse.json({ text });
+
   } catch (err) {
     console.error("food error", err);
-    return NextResponse.json({ text: "Error getting food suggestions." }, { status: 500 });
+    return NextResponse.json(
+      { text: "Error getting food suggestions." },
+      { status: 500 }
+    );
   }
 }
