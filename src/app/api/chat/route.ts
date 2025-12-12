@@ -1,16 +1,16 @@
-// src/app/api/chat/route.ts
+// src/app/api/chat/route.js
+// Fully Node.js compatible, CommonJS-safe, Vercel production stable
 
-import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
-
-// FORCE NODE RUNTIME — required to avoid Edge crashes
 export const runtime = "nodejs";
+
+const { NextResponse } = require("next/server");
+const OpenAI = require("openai");
 
 /**
  * Detect language using the OpenAI API.
- * Must run inside the request handler for proper runtime isolation.
+ * Runs inside handler for proper isolation.
  */
-async function detectLanguage(client: OpenAI, text: string): Promise<string> {
+async function detectLanguage(client, text) {
   try {
     const detection = await client.chat.completions.create({
       model: "gpt-4o-mini",
@@ -36,7 +36,7 @@ async function detectLanguage(client: OpenAI, text: string): Promise<string> {
 /**
  * Build system prompt
  */
-function systemPrompt(lang: string) {
+function systemPrompt(lang) {
   return `
 You are TripPuddy — a multilingual travel assistant.
 
@@ -61,23 +61,23 @@ CLARIFICATION:
 }
 
 /**
- * Chat Route Handler — fully Node runtime compatible
+ * Chat Route Handler — 100% Node runtime compatible
  */
-export async function POST(req: NextRequest) {
+export async function POST(req) {
   try {
     const body = await req.json();
     const messages = body.messages ?? [];
     const lastMessage = messages[messages.length - 1]?.content || "";
 
-    // Instantiate OpenAI INSIDE handler — prevents RSC/Edge binding
+    // Instantiate client INSIDE handler (safe)
     const client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY!,
+      apiKey: process.env.OPENAI_API_KEY,
     });
 
-    // Detect user language
+    // Detect language
     const lang = await detectLanguage(client, lastMessage);
 
-    // Chat completion
+    // Generate AI response
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
