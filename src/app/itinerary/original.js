@@ -1150,112 +1150,76 @@ return (
         {/* ================= END LEFT SIDE ================= */}
 
 
-        {/* ================= RIGHT SIDE ================= */}
-        <div
-          className="right"
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}
-        >
+{/* ================= RIGHT SIDE ================= */}
+<div
+  className="right"
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  }}
+>
 
-          {/* ACTIVITY IMAGE */}
-          {act.image && (
-            <img
-              src={act.image}
-              alt={act.title}
-              onClick={() => setPopupImage(act.image)}
-              style={{
-                width: "100%",
-                height: 150,
-                objectFit: "cover",
-                borderRadius: 10,
-                cursor: "zoom-in",
-                boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
-              }}
-            />
-          )}
+  {/* ACTIVITY IMAGE */}
+  {act.image && (
+    <img
+      src={act.image}
+      alt={act.title}
+      onClick={() => setPopupImage(act.image)}
+      style={{
+        width: "100%",
+        height: 150,
+        objectFit: "cover",
+        borderRadius: 10,
+        cursor: "zoom-in",
+        boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
+      }}
+    />
+  )}
 
-          {/* MINI MAP */}
-          {c && (
-            <div
-              className="mapWrap"
-              style={{
-                position: "relative",
-                zIndex: 5,
-                overflow: "hidden",
-                borderRadius: 10,
-                height: 160,
-                outline: "1px solid #f0f2f6",
-              }}
-            >
-              <LeafletMap
-                lat={c.lat}
-                lon={c.lon}
-                popup={loc.name}
-                routes={singleSeg}
-                user={userLocation}
-              />
-            </div>
-          )}
+  {/* MINI MAP */}
+  {c && (
+    <div
+      className="mapWrap"
+      style={{
+        position: "relative",
+        zIndex: 5,
+        overflow: "hidden",
+        borderRadius: 10,
+        height: 160,
+        outline: "1px solid #f0f2f6",
+      }}
+    >
+      <LeafletMap
+        lat={c.lat}
+        lon={c.lon}
+        popup={loc.name}
+        routes={singleSeg}
+        user={userLocation}
+      />
+    </div>
+  )}
 
-          {/* TRAVEL BADGE */}
-          {act.travelTime && mode && (
-            <div
-              className="travelBadge"
-              style={{
-                background: "#1e3a8a",
-                color: "#fff",
-                padding: "6px 12px",
-                fontSize: 14,
-                borderRadius: 18,
-                width: "fit-content",
-                fontWeight: 800,
-              }}
-            >
-              {iconFor(mode)} {act.travelTime}
-            </div>
-          )}
+  {/* TRAVEL BADGE */}
+  {act.travelTime && mode && (
+    <div
+      className="travelBadge"
+      style={{
+        background: "#1e3a8a",
 
-          {/* FULLSCREEN IMAGE POPUP */}
-          {popupImage && (
-            <div
-              className="overlay"
-              onClick={() => setPopupImage(null)}
-              style={{
-                position: "fixed",
-                inset: 0,
-                background: "rgba(0,0,0,0.85)",
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                zIndex: 9999,
-                cursor: "zoom-out",
-              }}
-            >
-              <img
-                className="modalImg"
-                src={popupImage}
-                alt="full"
-                style={{
-                  maxWidth: "92%",
-                  maxHeight: "92%",
-                  borderRadius: "12px",
-                  boxShadow: "0 0 24px rgba(0,0,0,0.4)",
-                  transition: "transform 0.25s ease",
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.transform = "scale(1.02)")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.transform = "scale(1.0)")
-                }
-              />
-            </div>
-          )}
+        color: "#fff",
+        padding: "6px 12px",
+        fontSize: 14,
+        borderRadius: 18,
+        width: "fit-content",
+        fontWeight: 800,
+      }}
+    >
+      {iconFor(mode)} {act.travelTime}
+    </div>
+  )}
 
-        </div>
+</div>  {/* END RIGHT SIDE */}
         {/* ================= END RIGHT SIDE ================= */}
 
       </div> {/* END card */}
