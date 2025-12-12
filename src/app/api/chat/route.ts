@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
-export const runtime = "edge";
+export const runtime = "nodejs";  // ✅ FIX: OpenAI SDK requires Node runtime
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -29,7 +29,7 @@ async function detectLanguage(text: string): Promise<string> {
 }
 
 /**
- * Clean system prompt (much more reliable for meaning understanding)
+ * Clean system prompt
  */
 function systemPrompt(lang: string) {
   return `
