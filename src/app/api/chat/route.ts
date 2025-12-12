@@ -1,35 +1,40 @@
 // src/app/api/chat/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
-export const runtime = "nodejs";  // ✅ FIX: OpenAI SDK requires Node runtime
-
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+// FORCE NODE RUNTIME — required to avoid Edge crashes
+export const runtime = "nodejs";
 
 /**
- * Accurate language detection using OpenAI
+ * Detect language using the OpenAI API.
+ * Must run inside the request handler for proper runtime isolation.
  */
-async function detectLanguage(text: string): Promise<string> {
-  const detection = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "system",
-        content:
-          "Detect the language of the following text. Respond ONLY with a two-letter ISO language code. No explanation.",
-      },
-      { role: "user", content: text },
-    ],
-    max_tokens: 5,
-  });
+async function detectLanguage(client: OpenAI, text: string): Promise<string> {
+  try {
+    const detection = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Detect the language of the following text. Respond ONLY with a two-letter ISO language code. No explanation.",
+        },
+        { role: "user", content: text },
+      ],
+      max_tokens: 5,
+    });
 
-  return detection.choices[0]?.message?.content?.trim()?.toLowerCase() || "en";
+    return (
+      detection.choices[0]?.message?.content?.trim()?.toLowerCase() || "en"
+    );
+  } catch {
+    return "en";
+  }
 }
 
 /**
- * Clean system prompt
+ * Build system prompt
  */
 function systemPrompt(lang: string) {
   return `
@@ -40,42 +45,44 @@ GENERAL RULES:
 2. Keep responses natural, concise, friendly.
 3. DO NOT hallucinate places. If unsure → ask politely.
 4. DO NOT misinterpret greetings (bonjour, xin chào, hola, etc.)
-5. If the user greeting is ambiguous (bon jour spelled incorrectly), interpret it as a GREETING first.
-6. Only interpret a message as a place if:
-   - It matches a known place, AND
+5. If a greeting is misspelled, treat it as a greeting first.
+6. Only interpret a message as a location if:
+   - It matches a real place, AND
    - The user intent is about travel/location.
 
 LANGUAGE BEHAVIOR:
 7. NEVER switch languages unless the user switches.
-8. Write naturally and fluently in ${lang}.
-
-GREETING RULES:
-9. If the message is a greeting (even if misspelled):
-   - Respond naturally in the same language.
-   - DO NOT try to make an itinerary.
-   - DO NOT treat it as a location.
+8. Respond fluently in ${lang}.
 
 CLARIFICATION:
-10. If unsure whether the user meant a place or a phrase:
-    Ask ONE polite clarification question in the user's language.
+9. If unsure whether the user meant a place or a phrase:
+   Ask ONE polite clarification question in the user's language.
 `;
 }
 
 /**
- * Chat route handler
+ * Chat Route Handler — fully Node runtime compatible
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const lastMessage = body.messages?.[body.messages.length - 1]?.content || "";
+    const messages = body.messages ?? [];
+    const lastMessage = messages[messages.length - 1]?.content || "";
 
-    const lang = await detectLanguage(lastMessage);
+    // Instantiate OpenAI INSIDE handler — prevents RSC/Edge binding
+    const client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY!,
+    });
 
+    // Detect user language
+    const lang = await detectLanguage(client, lastMessage);
+
+    // Chat completion
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt(lang) },
-        ...body.messages,
+        ...messages,
       ],
       max_tokens: 500,
       temperature: 0.5,
@@ -85,7 +92,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ reply });
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ reply: "⚠️ Error in /api/chat" });
+    console.error("CHAT API ERROR:", err);
+    return NextResponse.json(
+      { reply: "⚠️ Error in /api/chat" },
+      { status: 500 }
+    );
   }
 }
