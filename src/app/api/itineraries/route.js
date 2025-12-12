@@ -1,4 +1,6 @@
 "use server";
+export const runtime = "nodejs";
+
 // =======================================
 // TripPuddy — Smart Backend v5 (Stable)
 // =======================================
