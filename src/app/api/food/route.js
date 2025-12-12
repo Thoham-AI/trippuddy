@@ -1,20 +1,20 @@
-// src/app/api/food/route.ts
+// src/app/api/food/route.js
 
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
-// Force Node.js runtime (Edge cannot run OpenAI SDK)
+// Force Node.js runtime (OpenAI SDK cannot run on Edge)
 export const runtime = "nodejs";
 
-export async function POST(req: Request) {
+export async function POST(req) {
   try {
     const body = await req.json();
     const activity = body.activity || { title: "" };
     const location = body.location || {};
 
-    // OpenAI SDK MUST be instantiated inside the handler
+    // Create OpenAI client inside handler (prevents RSC binding)
     const client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY!,
+      apiKey: process.env.OPENAI_API_KEY,
     });
 
     const prompt = `
