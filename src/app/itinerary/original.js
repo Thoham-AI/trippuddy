@@ -988,6 +988,7 @@ export default function DestinationsPage() {
                   const daySegments = routesByDay[activeDay]?.segments || [];
                   const singleSeg = segmentForIndex(daySegments, i);
 return (
+return (
   <li key={`act-${i}`} style={{ marginBottom: 18 }}>
     <SortableActivity id={`act-${i}`}>
       <div
@@ -1004,9 +1005,11 @@ return (
           border: "1px solid #eef2f7",
         }}
       >
-        {/* LEFT SIDE */}
-        <div className="left">
 
+        {/* ================= LEFT SIDE ================= */}
+        <div className="left" style={{ display: "flex", flexDirection: "column" }}>
+
+          {/* TITLE */}
           <div
             className="title"
             style={{ fontSize: 18, fontWeight: 700 }}
@@ -1014,6 +1017,7 @@ return (
             <b>{act.time || "Flexible"}</b> — {act.title}
           </div>
 
+          {/* TIMING INFO */}
           {(act.arrival_time || act.durationMinutes || act.departure_time) && (
             <div
               className="timing"
@@ -1040,332 +1044,222 @@ return (
             </div>
           )}
 
+          {/* LOCATION + FLAG + LINK */}
           <div
-            className="loc"
             style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
               marginTop: 6,
-              fontSize: 15,
-              color: "#111827",
             }}
           >
-            {act.location}
+            <span style={{ marginRight: 6 }}>📍</span>
+
+            <span
+              className="flag"
+              style={{
+                fontWeight: 800,
+                letterSpacing: 1,
+              }}
+            >
+              {flag(loc.country)}{" "}
+            </span>
+
+            <span>{loc.name}</span>
+
+            {act.link && (
+              <a
+                href={act.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open website or Google Maps"
+                style={{
+                  marginLeft: 8,
+                  textDecoration: "none",
+                  fontSize: 18,
+                  cursor: "pointer",
+                  opacity: 0.9,
+                }}
+              >
+                🌐
+              </a>
+            )}
           </div>
 
-        </div> {/* END LEFT SIDE */}
+          {/* WEATHER */}
+          {act.weatherTemp !== null && (
+            <div
+              className="weather"
+              role={act.weatherLink ? "button" : undefined}
+              onClick={() => {
+                const link = act.weather?.link || act.weatherLink;
+                if (link) window.open(link, "_blank");
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 6,
+                color: "#0ea5e9",
+                fontWeight: 700,
+                cursor: act.weatherLink ? "pointer" : "default",
+                textDecoration: act.weatherLink ? "underline" : "none",
+              }}
+            >
+              <img
+                src={`https://openweathermap.org/img/wn/${
+                  act.weather?.icon || act.weatherIcon
+                }@2x.png`}
+                style={{ width: 32, height: 32 }}
+              />
 
-        {/* RIGHT SIDE (optional, if you have content here) */}
-        {/* <div className="right"> ... </div> */}
+              <span>
+                {Math.round(act.weather?.temp ?? act.weatherTemp)}°C —{" "}
+                {act.weather?.description ?? act.weatherDesc}
+              </span>
+            </div>
+          )}
+
+          {/* DETAILS */}
+          {act.details && (
+            <div
+              className="details"
+              style={{
+                marginTop: 8,
+                color: "#374151",
+              }}
+            >
+              {act.details}
+            </div>
+          )}
+
+          {/* COST */}
+          {act.cost_estimate && (
+            <div
+              className="cost"
+              style={{
+                marginTop: 6,
+                color: "#15803d",
+                fontWeight: 700,
+              }}
+            >
+              💰 {act.cost_estimate}
+            </div>
+          )}
+
+        </div>
+        {/* ================= END LEFT SIDE ================= */}
+
+
+        {/* ================= RIGHT SIDE ================= */}
+        <div
+          className="right"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+
+          {/* ACTIVITY IMAGE */}
+          {act.image && (
+            <img
+              src={act.image}
+              alt={act.title}
+              onClick={() => setPopupImage(act.image)}
+              style={{
+                width: "100%",
+                height: 150,
+                objectFit: "cover",
+                borderRadius: 10,
+                cursor: "zoom-in",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
+              }}
+            />
+          )}
+
+          {/* MINI MAP */}
+          {c && (
+            <div
+              className="mapWrap"
+              style={{
+                position: "relative",
+                zIndex: 5,
+                overflow: "hidden",
+                borderRadius: 10,
+                height: 160,
+                outline: "1px solid #f0f2f6",
+              }}
+            >
+              <LeafletMap
+                lat={c.lat}
+                lon={c.lon}
+                popup={loc.name}
+                routes={singleSeg}
+                user={userLocation}
+              />
+            </div>
+          )}
+
+          {/* TRAVEL BADGE */}
+          {act.travelTime && mode && (
+            <div
+              className="travelBadge"
+              style={{
+                background: "#1e3a8a",
+                color: "#fff",
+                padding: "6px 12px",
+                fontSize: 14,
+                borderRadius: 18,
+                width: "fit-content",
+                fontWeight: 800,
+              }}
+            >
+              {iconFor(mode)} {act.travelTime}
+            </div>
+          )}
+
+          {/* FULLSCREEN IMAGE POPUP */}
+          {popupImage && (
+            <div
+              className="overlay"
+              onClick={() => setPopupImage(null)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.85)",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                zIndex: 9999,
+                cursor: "zoom-out",
+              }}
+            >
+              <img
+                className="modalImg"
+                src={popupImage}
+                alt="full"
+                style={{
+                  maxWidth: "92%",
+                  maxHeight: "92%",
+                  borderRadius: "12px",
+                  boxShadow: "0 0 24px rgba(0,0,0,0.4)",
+                  transition: "transform 0.25s ease",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.transform = "scale(1.02)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.transform = "scale(1.0)")
+                }
+              />
+            </div>
+          )}
+
+        </div>
+        {/* ================= END RIGHT SIDE ================= */}
 
       </div> {/* END card */}
     </SortableActivity>
   </li>
 );
-
-                              // ✅ Fixed: Wrap location block inside a container
-<div
-  style={{
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 6,
-  }}
->
-  <span style={{ marginRight: 6 }}>📍</span>
-
-  <span
-    className="flag"
-    style={{
-      fontWeight: 800,
-      letterSpacing: 1,
-    }}
-  >
-    {flag(loc.country)}{" "}
-  </span>
-
-  <span>{loc.name}</span>
-
-  {act.link && (
-    <a
-      href={act.link}
-      target="_blank"
-      rel="noopener noreferrer"
-      title="Open website or Google Maps"
-      style={{
-        marginLeft: 8,
-        textDecoration: "none",
-        fontSize: 18,
-        cursor: "pointer",
-        opacity: 0.9,
-      }}
-    >
-      🌐
-    </a>
-  )}
-</div>
-
-  {act.weatherTemp !== null && (
-  <div
-    className="weather"
-    role={act.weatherLink ? "button" : undefined}
-    onClick={() => {
-      const link = act.weather?.link || act.weatherLink;
-      if (link) window.open(link, "_blank");
-    }}
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      marginTop: 6,
-      color: "#0ea5e9",
-      fontWeight: 700,
-      cursor: act.weatherLink ? "pointer" : "default",
-      textDecoration: act.weatherLink ? "underline" : "none",
-    }}
-  >
-    <img
-      src={`https://openweathermap.org/img/wn/${act.weather?.icon || act.weatherIcon}@2x.png`}
-      style={{ width: 32, height: 32 }}
-    />
-
-    <span>
-      {Math.round(act.weather?.temp ?? act.weatherTemp)}°C —{" "}
-      {act.weather?.description ?? act.weatherDesc}
-    </span>
-  </div>   {/* ✔️ PROPERLY CLOSED */}
-)}         {/* ✔️ VALID ENDING */}
-
-                            {act.details && (
-                              <div
-                                className="details"
-                                style={{
-                                  marginTop: 8,
-                                  color: "#374151",
-                                }}
-                              >
-                                {act.details}
-                              </div>
-                            )}
-
-                            {act.cost_estimate && (
-                              <div
-                                className="cost"
-                                style={{
-                                  marginTop: 6,
-                                  color: "#15803d",
-                                  fontWeight: 700,
-                                }}
-                              >
-                                💰 {act.cost_estimate}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* RIGHT */}
-                          <div
-                            className="right"
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 8,
-                            }}
-                          >
-{/* RIGHT */}
-<div
-  className="right"
-  style={{
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-  }}
->
-  {/* ACTIVITY IMAGE (CLICK TO ENLARGE) */}
-  {act.image && (
-    <img
-      src={act.image}
-      alt={act.title}
-      onClick={() => setPopupImage(act.image)}
-      style={{
-        width: "100%",
-        height: 150,
-        objectFit: "cover",
-        borderRadius: 10,
-        cursor: "zoom-in",
-        boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
-      }}
-    />
-  )}
-
-  {/* mini map */}
-  {c && (
-    <div className="mapWrap" ... >
-      <LeafletMap ... />
-    </div>
-  )}
-                            {/* mini map for this activity: only show previous→current segment */}
-                            {c && (
-                              <div
-                                className="mapWrap"
-                                style={{
-                                  position: "relative",
-                                  zIndex: 5,
-                                  overflow: "hidden",
-                                  borderRadius: 10,
-                                  height: 160,
-                                  outline: "1px solid #f0f2f6",
-                                }}
-                              >
-                                <LeafletMap
-                                  lat={c.lat}
-                                  lon={c.lon}
-                                  popup={loc.name}
-                                  routes={singleSeg}
-                                  user={userLocation}
-                                />
-                              </div>
-                            )}
-
-                            {act.travelTime && mode && (
-                              <div
-                                className="travelBadge"
-                                style={{
-                                  background: "#1e3a8a",
-                                  color: "#fff",
-                                  padding: "6px 12px",
-                                  fontSize: 14,
-                                  borderRadius: 18,
-                                  width: "fit-content",
-                                  fontWeight: 800,
-                                }}
-                              >
-                                {iconFor(mode)} {act.travelTime}
-                              </div>
-                            )}
-
-                            {popupImage && (
-  <div
-    className="overlay"
-    onClick={() => setPopupImage(null)}
-    style={{
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0,0,0,0.85)",
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      zIndex: 9999,
-      cursor: "zoom-out",
-    }}
-  >
-    <img
-      className="modalImg"
-      src={popupImage}
-      alt="full"
-      style={{
-        maxWidth: "92%",
-        maxHeight: "92%",
-        borderRadius: "12px",
-        boxShadow: "0 0 24px rgba(0,0,0,0.4)",
-        transition: "transform 0.25s ease",
-      }}
-      onMouseEnter={(e) =>
-        (e.currentTarget.style.transform = "scale(1.02)")
-      }
-      onMouseLeave={(e) =>
-        (e.currentTarget.style.transform = "scale(1.0)")
-      }
-    />
-  </div>
-)}
-
-                          </div>
-                        </div>
-                      </SortableActivity>
-                    </li>
-                  );
-                })}
-              </ul>
-            </SortableContext>
-          </DndContext>
-        )}
-
-        {/* Full-day route map */}
-        {showRouteMap && data.itinerary?.[activeDay] && (
-          <div style={{ marginTop: 16 }}>
-            <div
-              style={{
-                background: "#fff",
-                borderRadius: 12,
-                boxShadow: "0 2px 6px rgba(0,0,0,.06)",
-                padding: 10,
-                border: "1px solid #eef2f7",
-              }}
-            >
-              <div
-                style={{
-                  fontWeight: 900,
-                  marginBottom: 8,
-                  color: "#0f172a",
-                }}
-              >
-                Full Day Route — Day {activeDay + 1}
-              </div>
-              <div style={{ width: "100%", height: "48vh" }}>
-                <LeafletMap
-                  lat={
-                    data.itinerary[activeDay].activities?.[0]?.coordinates?.lat ||
-                    1.29
-                  }
-                  lon={
-                    data.itinerary[activeDay].activities?.[0]?.coordinates?.lon ||
-                    103.85
-                  }
-                  popup={`Day ${activeDay + 1}`}
-                  routes={routesByDay[activeDay]?.segments || []}
-                  bounds={fullDayBounds}
-                  user={userLocation}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ✅ Fixed SINGLE fullscreen popup */}
-      {popupImage && (
-        <div
-          className="overlay"
-          onClick={() => setPopupImage(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.85)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 9999,
-            cursor: "zoom-out",
-          }}
-        >
-          <img
-            className="modalImg"
-            src={popupImage}
-            alt="full"
-            style={{
-              maxWidth: "92%",
-              maxHeight: "92%",
-              borderRadius: "12px",
-              boxShadow: "0 0 24px rgba(0,0,0,0.4)",
-              transition: "transform 0.25s ease",
-            }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.transform = "scale(1.02)")
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.transform = "scale(1.0)")
-            }
-          />
-        </div>
-      )}
-    </div>
-  );
-}
