@@ -1009,10 +1009,7 @@ return (
         <div className="left" style={{ display: "flex", flexDirection: "column" }}>
 
           {/* TITLE */}
-          <div
-            className="title"
-            style={{ fontSize: 18, fontWeight: 700 }}
-          >
+          <div className="title" style={{ fontSize: 18, fontWeight: 700 }}>
             <b>{act.time || "Flexible"}</b> — {act.title}
           </div>
 
@@ -1056,10 +1053,7 @@ return (
 
             <span
               className="flag"
-              style={{
-                fontWeight: 800,
-                letterSpacing: 1,
-              }}
+              style={{ fontWeight: 800, letterSpacing: 1 }}
             >
               {flag(loc.country)}{" "}
             </span>
@@ -1071,7 +1065,6 @@ return (
                 href={act.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                title="Open website or Google Maps"
                 style={{
                   marginLeft: 8,
                   textDecoration: "none",
@@ -1121,13 +1114,7 @@ return (
 
           {/* DETAILS */}
           {act.details && (
-            <div
-              className="details"
-              style={{
-                marginTop: 8,
-                color: "#374151",
-              }}
-            >
+            <div className="details" style={{ marginTop: 8, color: "#374151" }}>
               {act.details}
             </div>
           )}
@@ -1149,77 +1136,74 @@ return (
         </div>
         {/* ================= END LEFT SIDE ================= */}
 
+        {/* ================= RIGHT SIDE ================= */}
+        <div
+          className="right"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
 
-{/* ================= RIGHT SIDE ================= */}
-<div
-  className="right"
-  style={{
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-  }}
->
+          {/* ACTIVITY IMAGE */}
+          {act.image && (
+            <img
+              src={act.image}
+              alt={act.title}
+              onClick={() => setPopupImage(act.image)}
+              style={{
+                width: "100%",
+                height: 150,
+                objectFit: "cover",
+                borderRadius: 10,
+                cursor: "zoom-in",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
+              }}
+            />
+          )}
 
-  {/* ACTIVITY IMAGE */}
-  {act.image && (
-    <img
-      src={act.image}
-      alt={act.title}
-      onClick={() => setPopupImage(act.image)}
-      style={{
-        width: "100%",
-        height: 150,
-        objectFit: "cover",
-        borderRadius: 10,
-        cursor: "zoom-in",
-        boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
-      }}
-    />
-  )}
+          {/* MINI MAP */}
+          {c && (
+            <div
+              className="mapWrap"
+              style={{
+                position: "relative",
+                zIndex: 5,
+                overflow: "hidden",
+                borderRadius: 10,
+                height: 160,
+                outline: "1px solid #f0f2f6",
+              }}
+            >
+              <LeafletMap
+                lat={c.lat}
+                lon={c.lon}
+                popup={loc.name}
+                routes={singleSeg}
+                user={userLocation}
+              />
+            </div>
+          )}
 
-  {/* MINI MAP */}
-  {c && (
-    <div
-      className="mapWrap"
-      style={{
-        position: "relative",
-        zIndex: 5,
-        overflow: "hidden",
-        borderRadius: 10,
-        height: 160,
-        outline: "1px solid #f0f2f6",
-      }}
-    >
-      <LeafletMap
-        lat={c.lat}
-        lon={c.lon}
-        popup={loc.name}
-        routes={singleSeg}
-        user={userLocation}
-      />
-    </div>
-  )}
-
-  {/* TRAVEL BADGE */}
-  {act.travelTime && mode && (
-    <div
-      className="travelBadge"
-      style={{
-        background: "#1e3a8a",
-
-        color: "#fff",
-        padding: "6px 12px",
-        fontSize: 14,
-        borderRadius: 18,
-        width: "fit-content",
-        fontWeight: 800,
-      }}
-    >
-      {iconFor(mode)} {act.travelTime}
-    </div>
-  )}
-
-</div>  {/* END RIGHT SIDE */}
+          {/* TRAVEL BADGE */}
+          {act.travelTime && mode && (
+            <div
+              className="travelBadge"
+              style={{
+                background: "#1e3a8a",
+                color: "#fff",
+                padding: "6px 12px",
+                fontSize: 14,
+                borderRadius: 18,
+                width: "fit-content",
+                fontWeight: 800,
+              }}
+            >
+              {iconFor(mode)} {act.travelTime}
+            </div>
+          )}
+        </div>
         {/* ================= END RIGHT SIDE ================= */}
 
       </div> {/* END card */}
