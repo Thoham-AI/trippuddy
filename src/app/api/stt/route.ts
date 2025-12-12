@@ -1,43 +1,27 @@
-import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+export const runtime = "nodejs";
 
-export const runtime = "edge";
+import { NextResponse } from "next/server";
+import handleSTT from "./handler.node.mjs";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
-
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    console.log("📥 /api/stt HIT!");
-
     const form = await req.formData();
-    const file = form.get("file") as Blob;
+    const audio = form.get("audio") as File | null;
 
-    if (!file) {
-      return NextResponse.json({
-        text: null,
-        error: "No audio file received",
-      });
+    if (!audio) {
+      return NextResponse.json(
+        { ok: false, text: "No audio file provided." },
+        { status: 400 }
+      );
     }
 
-    const result = await client.audio.transcriptions.create({
-      file,
-      model: "whisper-1",
-      response_format: "json"
-    });
-
-    return NextResponse.json({ text: result.text, error: null });
-
-  } catch (err: any) {
-    console.error("❌ Whisper API Error:", err);
-
-    // Safely return an error JSON (NEVER HTML)
-    return NextResponse.json({
-      text: null,
-      error: err?.message || "Unknown STT error",
-      code: err?.code || null,
-      type: err?.type || null
-    });
+    const result = await handleSTT(audio);
+    return NextResponse.json(result);
+  } catch (err) {
+    console.error("STT wrapper error:", err);
+    return NextResponse.json(
+      { ok: false, text: "STT route failed." },
+      { status: 500 }
+    );
   }
 }
