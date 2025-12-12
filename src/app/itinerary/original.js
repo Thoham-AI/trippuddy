@@ -988,7 +988,6 @@ export default function DestinationsPage() {
                   const daySegments = routesByDay[activeDay]?.segments || [];
                   const singleSeg = segmentForIndex(daySegments, i);
 return (
-return (
   <li key={`act-${i}`} style={{ marginBottom: 18 }}>
     <SortableActivity id={`act-${i}`}>
       <div
