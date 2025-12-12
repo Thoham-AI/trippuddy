@@ -2,7 +2,7 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import handlePackingList from "./handler.node.mjs";
+import handlePackingList from "./handler.node.js";
 
 export async function POST(req) {
   try {

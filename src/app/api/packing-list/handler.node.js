@@ -1,16 +1,16 @@
-// src/app/api/packing-list/handler.node.mjs
-// PURE NODE ESM — Not processed by Next.js RSC or Edge
+// src/app/api/packing-list/handler.node.js
+// Pure Node.js CommonJS — Fully compatible with Vercel Node runtime
 
-import OpenAI from "openai";
+const OpenAI = require("openai");
 
-// Lazy client loader for better error reporting
+// Lazy client loader for better debug info
 function getClient() {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY missing");
   return new OpenAI({ apiKey: key });
 }
 
-export default async function handlePackingList(itinerary) {
+module.exports = async function handlePackingList(itinerary) {
   try {
     if (!itinerary || typeof itinerary !== "object") {
       return {
@@ -51,4 +51,4 @@ Output human-friendly plain text only. Do NOT output JSON.`,
       details: String(err),
     };
   }
-}
+};

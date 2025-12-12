@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import handleSTT from "./handler.node.mjs";
+import handleSTT from "./handler.node.js";
 
 export async function POST(req: Request) {
   try {

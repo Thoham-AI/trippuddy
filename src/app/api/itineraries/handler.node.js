@@ -1,7 +1,7 @@
-// src/app/api/itineraries/handler.node.mjs
-// PURE NODE ESM MODULE — not a Next.js route, safe to import from route.js
+// src/app/api/itineraries/handler.node.js
+// PURE NODE CJS MODULE — safe for Vercel & Next.js
 
-import OpenAI from "openai";
+const OpenAI = require("openai");
 
 /* ------------------------------------------------------------------
    CONFIG & CONSTANTS
@@ -15,12 +15,12 @@ const DEFAULT_LOCATION = {
   lon: 130.8456, // Darwin
 };
 
-const MAX_DAYS = 14; // hard cap for safety
+const MAX_DAYS = 14;
 const MAX_ACTIVITIES_PER_DAY = 10;
 const FETCH_TIMEOUT_MS = 8000;
 
 /* ------------------------------------------------------------------
-   UTIL: SAFE FETCH WITH TIMEOUT
+   SAFE FETCH WITH TIMEOUT
 -------------------------------------------------------------------*/
 
 async function safeFetch(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
@@ -30,7 +30,7 @@ async function safeFetch(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
   try {
     const res = await fetch(url, {
       ...options,
-      signal: controller.signal,
+      signal: controller.signal
     });
     return res;
   } catch (err) {
@@ -42,14 +42,12 @@ async function safeFetch(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
 }
 
 /* ------------------------------------------------------------------
-   OPENAI CLIENT (lazy getter for better failure messages)
+   OPENAI CLIENT
 -------------------------------------------------------------------*/
 
 function getOpenAIClient() {
   const key = process.env.OPENAI_API_KEY;
-  if (!key) {
-    throw new Error("OPENAI_API_KEY is not set");
-  }
+  if (!key) throw new Error("OPENAI_API_KEY is not set");
   return new OpenAI({ apiKey: key });
 }
 
@@ -67,10 +65,8 @@ async function getWeather(lat, lon) {
 
     const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${key}`;
     const res = await safeFetch(url);
-    if (!res || !res.ok) {
-      console.warn("Weather fetch failed:", res?.status);
-      return null;
-    }
+    if (!res || !res.ok) return null;
+
     return await res.json();
   } catch (err) {
     console.error("Weather error:", err);
@@ -89,10 +85,7 @@ async function fetchPlaceDetails(query, apiKey) {
   }
 
   try {
-    const textURL = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(
-      query
-    )}&key=${apiKey}`;
-
+    const textURL = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${apiKey}`;
     const tRes = await safeFetch(textURL);
     if (!tRes || !tRes.ok) return null;
 
@@ -103,7 +96,6 @@ async function fetchPlaceDetails(query, apiKey) {
     const placeId = item.place_id;
 
     const detailURL = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,geometry,opening_hours,photos,types,formatted_address,url&key=${apiKey}`;
-
     const dRes = await safeFetch(detailURL);
     if (!dRes || !dRes.ok) return null;
 
@@ -121,7 +113,7 @@ async function fetchPlaceDetails(query, apiKey) {
       opening_hours: r.opening_hours || null,
       photo_reference: r.photos?.[0]?.photo_reference || null,
       url: r.url || null,
-      place_id: placeId,
+      place_id: placeId
     };
   } catch (err) {
     console.error("fetchPlaceDetails error:", err);
@@ -145,15 +137,12 @@ function makePhotoURL(photoRef, apiKey) {
 async function unsplashFallback(query) {
   const key = process.env.UNSPLASH_KEY;
   if (!key) {
-    console.warn("UNSPLASH_KEY not set – no image fallback.");
+    console.warn("UNSPLASH_KEY not set – skipping fallback images.");
     return null;
   }
 
   try {
-    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(
-      query
-    )}&client_id=${key}&orientation=landscape&per_page=1`;
-
+    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&client_id=${key}&orientation=landscape&per_page=1`;
     const res = await safeFetch(url);
     if (!res || !res.ok) return null;
 
@@ -224,19 +213,18 @@ function normalizeItinerary(raw) {
     return { days: [] };
   }
 
-  // Hard caps for safety
-  const limitedDays = raw.days.slice(0, MAX_DAYS).map((day, index) => ({
+  const limited = raw.days.slice(0, MAX_DAYS).map((day, index) => ({
     day: day.day ?? index + 1,
     activities: Array.isArray(day.activities)
       ? day.activities.slice(0, MAX_ACTIVITIES_PER_DAY)
-      : [],
+      : []
   }));
 
-  return { days: limitedDays };
+  return { days: limited };
 }
 
 /* ------------------------------------------------------------------
-   FIX FIRST ACTIVITY START TIMES
+   ENSURE MORNING START
 -------------------------------------------------------------------*/
 
 function ensureMorningStart(days) {
@@ -251,18 +239,18 @@ function ensureMorningStart(days) {
       first.suggested_departure_time || "10:30";
     first.duration_minutes = first.duration_minutes || 90;
   }
+
   return days;
 }
 
 /* ------------------------------------------------------------------
-   VALIDATE / FIX ACTIVITIES
+   VALIDATE & FIX ACTIVITIES
 -------------------------------------------------------------------*/
 
 async function validateAndFixActivities(days, apiKey, weather) {
   const month = new Date().getMonth() + 1;
   const wetSeason = month >= 11 || month <= 4;
-  const heavyRain =
-    weather?.weather?.[0]?.main?.toLowerCase()?.includes("rain") ?? false;
+  const heavyRain = weather?.weather?.[0]?.main?.toLowerCase()?.includes("rain");
 
   const weatherLink = weather
     ? `https://openweathermap.org/weathermap?basemap=map&layers=temperature&lat=${weather.coord.lat}&lon=${weather.coord.lon}&zoom=10`
@@ -277,28 +265,27 @@ async function validateAndFixActivities(days, apiKey, weather) {
 
       const place = await fetchPlaceDetails(query, apiKey);
 
-      // Fallback: keep activity even if place lookup fails
       if (!place) {
         fixed.push({
           ...a,
           title: a.title || query,
-          image: null,
           latitude: a.latitude ?? null,
           longitude: a.longitude ?? null,
+          image: null,
           google_maps_query: query,
           weather: weather
             ? {
-                temp: weather?.main?.temp ?? null,
-                description: weather?.weather?.[0]?.description ?? null,
-                icon: weather?.weather?.[0]?.icon ?? null,
-                link: weatherLink,
+                temp: weather.main?.temp ?? null,
+                description: weather.weather?.[0]?.description ?? null,
+                icon: weather.weather?.[0]?.icon ?? null,
+                link: weatherLink
               }
-            : null,
+            : null
         });
         continue;
       }
 
-      // Weather avoidance logic preserved
+      // Skip certain places in wet season / heavy rain
       if (wetSeason && /mindil/i.test(place.name)) continue;
       if (
         heavyRain &&
@@ -320,16 +307,15 @@ async function validateAndFixActivities(days, apiKey, weather) {
         image,
         weather: weather
           ? {
-              temp: weather?.main?.temp ?? null,
-              description: weather?.weather?.[0]?.description ?? null,
-              icon: weather?.weather?.[0]?.icon ?? null,
-              link: weatherLink,
+              temp: weather.main?.temp ?? null,
+              description: weather.weather?.[0]?.description ?? null,
+              icon: weather.weather?.[0]?.icon ?? null,
+              link: weatherLink
             }
-          : null,
+          : null
       });
     }
 
-    // Ensure each day has at least 1 activity
     if (fixed.length === 0) {
       fixed.push({
         title: "Darwin Waterfront Precinct",
@@ -340,7 +326,7 @@ async function validateAndFixActivities(days, apiKey, weather) {
         latitude: -12.4662,
         longitude: 130.8464,
         description: "Relax at the lagoon and explore the waterfront.",
-        estimated_cost: "Free",
+        estimated_cost: "Free"
       });
     }
 
@@ -351,10 +337,10 @@ async function validateAndFixActivities(days, apiKey, weather) {
 }
 
 /* ------------------------------------------------------------------
-   MAIN EXPORT — Node-only handler
+   MAIN HANDLER EXPORT
 -------------------------------------------------------------------*/
 
-export default async function handleItineraryRequest(input) {
+module.exports = async function handleItineraryRequest(input) {
   try {
     const data = input && typeof input === "object" ? input : {};
 
@@ -362,7 +348,7 @@ export default async function handleItineraryRequest(input) {
     if (typeof userPrompt !== "string" || !userPrompt.trim()) {
       return {
         ok: false,
-        error: "userPrompt is required and must be a non-empty string.",
+        error: "userPrompt is required and must be a non-empty string."
       };
     }
     userPrompt = userPrompt.trim();
@@ -376,32 +362,30 @@ export default async function handleItineraryRequest(input) {
       userLocation = { ...DEFAULT_LOCATION };
     }
 
-    // External data
+    // Weather
     const weather = await getWeather(userLocation.lat, userLocation.lon);
 
-    // Build prompt for GPT
+    // Build GPT prompt
     const gptPrompt = buildGPTPrompt(userPrompt, weather);
 
-    // OpenAI call
+    // GPT call
     const client = getOpenAIClient();
 
     const completion = await client.chat.completions.create({
       model: OPENAI_MODEL,
       messages: [
-        {
-          role: "system",
-          content: "Return ONLY valid JSON. Never markdown.",
-        },
-        { role: "user", content: gptPrompt },
+        { role: "system", content: "Return ONLY valid JSON. No markdown." },
+        { role: "user", content: gptPrompt }
       ],
       temperature: 0.5,
-      max_tokens: OPENAI_MAX_TOKENS,
+      max_tokens: OPENAI_MAX_TOKENS
     });
 
     let raw = completion.choices[0]?.message?.content || "";
     raw = raw.replace(/```json|```/g, "").trim();
 
     let itinerary;
+
     try {
       itinerary = JSON.parse(raw);
     } catch (err) {
@@ -409,12 +393,13 @@ export default async function handleItineraryRequest(input) {
       itinerary = { days: [] };
     }
 
+    // Normalize
     itinerary = normalizeItinerary(itinerary);
 
     // Fix morning start
     itinerary.days = ensureMorningStart(itinerary.days);
 
-    // Validate and fix activities
+    // Validate/fix activities
     itinerary.days = await validateAndFixActivities(
       itinerary.days,
       process.env.GOOGLE_PLACES_API_KEY,
@@ -423,11 +408,11 @@ export default async function handleItineraryRequest(input) {
 
     return { ok: true, itinerary, weather, userLocation };
   } catch (err) {
-    console.error("🔥 SERVER ERROR (handler.node.mjs):", err);
+    console.error("🔥 SERVER ERROR (handler.node.js):", err);
     return {
       ok: false,
       error: "Itinerary generation failed",
-      details: String(err?.message || err),
+      details: String(err?.message || err)
     };
   }
-}
+};

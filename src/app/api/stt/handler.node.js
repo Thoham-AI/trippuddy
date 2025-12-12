@@ -1,9 +1,13 @@
-// Node-only STT handler using Whisper API
-import OpenAI from "openai";
-import fs from "node:fs/promises";
+// Node-only STT handler using Whisper API (CommonJS)
 
-export default async function handleSTT(audio) {
+const OpenAI = require("openai");
+
+module.exports = async function handleSTT(audio) {
   try {
+    if (!audio) {
+      return { ok: false, text: "No audio provided." };
+    }
+
     const client = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
@@ -20,6 +24,10 @@ export default async function handleSTT(audio) {
     return { ok: true, text: response.text };
   } catch (err) {
     console.error("STT error:", err);
-    return { ok: false, text: "Speech recognition failed." };
+    return {
+      ok: false,
+      text: "Speech recognition failed.",
+      details: String(err),
+    };
   }
-}
+};
