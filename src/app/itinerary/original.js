@@ -1061,35 +1061,47 @@ return (
   </li>
 );
 
-                              <span style={{ marginRight: 6 }}>📍</span>
-                              <span
-                                className="flag"
-                                style={{
-                                  fontWeight: 800,
-                                  letterSpacing: 1,
-                                }}
-                              >
-                                {flag(loc.country)}{" "}
-                              </span>
-                              {loc.name}
-                              {act.link && (
-                                <a
-                                  href={act.link}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  title="Open website or Google Maps"
-                                  style={{
-                                    marginLeft: 8,
-                                    textDecoration: "none",
-                                    fontSize: 18,
-                                    cursor: "pointer",
-                                    opacity: 0.9,
-                                  }}
-                                >
-                                  🌐
-                                </a>
-                              )}
-                            </div>
+                              // ✅ Fixed: Wrap location block inside a container
+<div
+  style={{
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 6,
+  }}
+>
+  <span style={{ marginRight: 6 }}>📍</span>
+
+  <span
+    className="flag"
+    style={{
+      fontWeight: 800,
+      letterSpacing: 1,
+    }}
+  >
+    {flag(loc.country)}{" "}
+  </span>
+
+  <span>{loc.name}</span>
+
+  {act.link && (
+    <a
+      href={act.link}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open website or Google Maps"
+      style={{
+        marginLeft: 8,
+        textDecoration: "none",
+        fontSize: 18,
+        cursor: "pointer",
+        opacity: 0.9,
+      }}
+    >
+      🌐
+    </a>
+  )}
+</div>
 
                             {act.weatherTemp !== null && (
   <div
