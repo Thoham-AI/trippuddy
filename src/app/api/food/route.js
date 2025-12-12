@@ -1,35 +1,34 @@
+// src/app/api/food/route.ts
+
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
+// Force Node.js runtime (Edge cannot run OpenAI SDK)
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-export async function POST(req) {
+export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const activity = body.activity || { title: "" };
+    const location = body.location || {};
 
-    // Support multiple input formats
-    const activity = body.activity || { title: body.userPrompt || "" };
-    const location = body.location || body.userLocation || {};
+    // OpenAI SDK MUST be instantiated inside the handler
+    const client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY!,
+    });
 
     const prompt = `
 User is near: ${activity.title}
 Area: ${location?.name || ""}, ${location?.country || ""}
 
 Recommend 5 places to eat nearby.
-Include a mix of:
+Include:
 - cheap local food
 - mid-range
-- one nicer option if appropriate
+- one nicer option
 
-For each place, give:
-- Name
-- Type of cuisine
-- Rough price level ($, $$, $$$)
-- 1 short tip (what to order)
-
-Return in bullet points.
+For each: name, cuisine, price $, tip (what to order).
+Return bullet points only.
 `;
 
     const res = await client.chat.completions.create({
@@ -42,9 +41,8 @@ Return in bullet points.
       max_tokens: 500,
     });
 
-    const text = res.choices[0].message.content || "";
+    const text = res.choices[0].message.content ?? "";
     return NextResponse.json({ text });
-
   } catch (err) {
     console.error("food error", err);
     return NextResponse.json(
