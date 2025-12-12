@@ -739,7 +739,6 @@ export default function DestinationsPage() {
     : `Optimize day`;
 
   /* ----------------------- render ----------------------- */
-
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc" }}>
       {/* Banner / hero */}
@@ -919,46 +918,6 @@ export default function DestinationsPage() {
             >
               Export CSV
             </button>
-
-            {/* PDF export button */}
-            {data.itinerary?.length > 0 && (
-              <button
-                onClick={async () => {
-                  try {
-                    setLoading(true);
-                    const res = await fetch("/api/generatePdf", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ itinerary: data.itinerary }),
-                    });
-                    setLoading(false);
-
-                    if (res.ok) {
-                      const blob = await res.blob();
-                      const url = URL.createObjectURL(blob);
-                      window.open(url, "_blank");
-                    } else {
-                      alert("PDF generation failed.");
-                    }
-                  } catch (err) {
-                    console.error("Export PDF error:", err);
-                    setLoading(false);
-                    alert("Error creating PDF. Check console for details.");
-                  }
-                }}
-                title="Export itinerary as PDF"
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  background: "#0ea5e9",
-                  color: "#fff",
-                  fontWeight: 700,
-                  border: "none",
-                }}
-              >
-                🧾 Export PDF
-              </button>
-            )}
           </div>
         )}
 
@@ -969,236 +928,217 @@ export default function DestinationsPage() {
               items={itemsForDay}
               strategy={verticalListSortingStrategy}
             >
-              <ul
-                style={{
-                  listStyle: "none",
-                  margin: 0,
-                  padding: 0,
-                  marginTop: 12,
-                }}
-              >
+              <ul style={{ listStyle: "none", margin: 0, padding: 0, marginTop: 12 }}>
                 {data.itinerary[activeDay].activities?.map((act, i) => {
                   const loc = act.location || {};
-                  const w = act.weather;
                   const c = act.coordinates;
                   const prevC =
                     data.itinerary[activeDay].activities?.[i - 1]?.coordinates;
-                  const mode = prevC && c ? modeFor(distKm(prevC, c)) : undefined;
+                  const singleSeg = segmentForIndex(
+                    routesByDay[activeDay]?.segments || [],
+                    i
+                  );
 
-                  const daySegments = routesByDay[activeDay]?.segments || [];
-                  const singleSeg = segmentForIndex(daySegments, i);
-return (
-  <li key={`act-${i}`} style={{ marginBottom: 18 }}>
-    <SortableActivity id={`act-${i}`}>
-      <div
-        className="card"
-        style={{
-          background: "#fff",
-          padding: 14,
-          borderRadius: 12,
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 12,
-          boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
-          position: "relative",
-          border: "1px solid #eef2f7",
-        }}
-      >
+                  return (
+                    <li key={`act-${i}`} style={{ marginBottom: 18 }}>
+                      <SortableActivity id={`act-${i}`}>
+                        <div
+                          className="card"
+                          style={{
+                            background: "#fff",
+                            padding: 14,
+                            borderRadius: 12,
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: 12,
+                            boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+                            border: "1px solid #eef2f7",
+                          }}
+                        >
+                          {/* LEFT SIDE */}
+                          <div className="left" style={{ display: "flex", flexDirection: "column" }}>
+                            <div className="title" style={{ fontSize: 18, fontWeight: 700 }}>
+                              <b>{act.time || "Flexible"}</b> — {act.title}
+                            </div>
 
-        {/* ================= LEFT SIDE ================= */}
-        <div className="left" style={{ display: "flex", flexDirection: "column" }}>
+                            {(act.arrival_time ||
+                              act.durationMinutes ||
+                              act.departure_time) && (
+                              <div
+                                className="timing"
+                                style={{
+                                  marginTop: 4,
+                                  fontSize: 13,
+                                  color: "#4b5563",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {act.arrival_time && <span>Arrive {act.arrival_time}</span>}
+                                {act.durationMinutes && (
+                                  <span>
+                                    {act.arrival_time ? " · " : ""}
+                                    Stay ~{act.durationMinutes} min
+                                  </span>
+                                )}
+                                {act.departure_time && (
+                                  <span>
+                                    {(act.arrival_time ||
+                                      act.durationMinutes) &&
+                                      " · "}
+                                    Leave {act.departure_time}
+                                  </span>
+                                )}
+                              </div>
+                            )}
 
-          {/* TITLE */}
-          <div className="title" style={{ fontSize: 18, fontWeight: 700 }}>
-            <b>{act.time || "Flexible"}</b> — {act.title}
-          </div>
+                            {/* FLAG + LOCATION */}
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                marginTop: 6,
+                              }}
+                            >
+                              <span>📍</span>
+                              <span
+                                className="flag"
+                                style={{
+                                  fontWeight: 800,
+                                  letterSpacing: 1,
+                                }}
+                              >
+                                {flag(loc.country)}
+                              </span>
+                              <span>{loc.name}</span>
+                            </div>
+                          </div>
 
-          {/* TIMING INFO */}
-          {(act.arrival_time || act.durationMinutes || act.departure_time) && (
+                          {/* RIGHT SIDE */}
+                          <div
+                            className="right"
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 8,
+                            }}
+                          >
+                            {act.image && (
+                              <img
+                                src={act.image}
+                                alt={act.title}
+                                onClick={() => setPopupImage(act.image)}
+                                style={{
+                                  width: "100%",
+                                  height: 150,
+                                  objectFit: "cover",
+                                  borderRadius: 10,
+                                  cursor: "zoom-in",
+                                }}
+                              />
+                            )}
+
+                            {c && (
+                              <div
+                                style={{
+                                  position: "relative",
+                                  overflow: "hidden",
+                                  borderRadius: 10,
+                                  height: 160,
+                                }}
+                              >
+                                <LeafletMap
+                                  lat={c.lat}
+                                  lon={c.lon}
+                                  popup={loc.name}
+                                  routes={singleSeg}
+                                  user={userLocation}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                      </SortableActivity>
+                    </li>
+                  );
+                })}
+              </ul>
+            </SortableContext>
+          </DndContext>
+        )}
+
+        {/* Full-day route map */}
+        {showRouteMap && data.itinerary?.[activeDay] && (
+          <div style={{ marginTop: 16 }}>
             <div
-              className="timing"
               style={{
-                marginTop: 4,
-                fontSize: 13,
-                color: "#4b5563",
-                fontWeight: 500,
+                background: "#fff",
+                borderRadius: 12,
+                boxShadow: "0 2px 6px rgba(0,0,0,.06)",
+                padding: 10,
+                border: "1px solid #eef2f7",
               }}
             >
-              {act.arrival_time && <span>Arrive {act.arrival_time}</span>}
-              {act.durationMinutes && (
-                <span>
-                  {act.arrival_time ? " · " : ""}
-                  Stay ~{act.durationMinutes} min
-                </span>
-              )}
-              {act.departure_time && (
-                <span>
-                  {(act.arrival_time || act.durationMinutes) ? " · " : ""}
-                  Leave {act.departure_time}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* LOCATION */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              marginTop: 6,
-            }}
-          >
-            <span style={{ marginRight: 6 }}>📍</span>
-
-            <span
-              className="flag"
-              style={{ fontWeight: 800, letterSpacing: 1 }}
-            >
-              {flag(loc.country)}{" "}
-            </span>
-
-            <span>{loc.name}</span>
-
-            {act.link && (
-              <a
-                href={act.link}
-                target="_blank"
-                rel="noopener noreferrer"
+              <div
                 style={{
-                  marginLeft: 8,
-                  textDecoration: "none",
-                  fontSize: 18,
-                  cursor: "pointer",
-                  opacity: 0.9,
+                  fontWeight: 900,
+                  marginBottom: 8,
+                  color: "#0f172a",
                 }}
               >
-                🌐
-              </a>
-            )}
+                Full Day Route — Day {activeDay + 1}
+              </div>
+
+              <div style={{ width: "100%", height: "48vh" }}>
+                <LeafletMap
+                  lat={
+                    data.itinerary[activeDay].activities?.[0]?.coordinates?.lat ||
+                    1.29
+                  }
+                  lon={
+                    data.itinerary[activeDay].activities?.[0]?.coordinates?.lon ||
+                    103.85
+                  }
+                  popup={`Day ${activeDay + 1}`}
+                  routes={routesByDay[activeDay]?.segments || []}
+                  bounds={fullDayBounds}
+                  user={userLocation}
+                />
+              </div>
+            </div>
           </div>
+        )}
+      </div>
 
-          {/* WEATHER */}
-          {act.weatherTemp !== null && (
-            <div
-              className="weather"
-              role={act.weatherLink ? "button" : undefined}
-              onClick={() => {
-                const link = act.weather?.link || act.weatherLink;
-                if (link) window.open(link, "_blank");
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginTop: 6,
-                color: "#0ea5e9",
-                fontWeight: 700,
-                cursor: act.weatherLink ? "pointer" : "default",
-                textDecoration: act.weatherLink ? "underline" : "none",
-              }}
-            >
-              <img
-                src={`https://openweathermap.org/img/wn/${
-                  act.weather?.icon || act.weatherIcon
-                }@2x.png`}
-                style={{ width: 32, height: 32 }}
-              />
-
-              <span>
-                {Math.round(act.weather?.temp ?? act.weatherTemp)}°C —{" "}
-                {act.weather?.description ?? act.weatherDesc}
-              </span>
-            </div>
-          )}
-
-          {/* DETAILS */}
-          {act.details && (
-            <div className="details" style={{ marginTop: 8, color: "#374151" }}>
-              {act.details}
-            </div>
-          )}
-
-          {/* COST */}
-          {act.cost_estimate && (
-            <div
-              className="cost"
-              style={{ marginTop: 6, color: "#15803d", fontWeight: 700 }}
-            >
-              💰 {act.cost_estimate}
-            </div>
-          )}
-        </div>
-
-        {/* ================= RIGHT SIDE ================= */}
+      {/* Fullscreen image viewer */}
+      {popupImage && (
         <div
-          className="right"
+          className="overlay"
+          onClick={() => setPopupImage(null)}
           style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.85)",
             display: "flex",
-            flexDirection: "column",
-            gap: 8,
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999,
+            cursor: "zoom-out",
           }}
         >
-          {/* IMAGE */}
-          {act.image && (
-            <img
-              src={act.image}
-              alt={act.title}
-              onClick={() => setPopupImage(act.image)}
-              style={{
-                width: "100%",
-                height: 150,
-                objectFit: "cover",
-                borderRadius: 10,
-                cursor: "zoom-in",
-                boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
-              }}
-            />
-          )}
-
-          {/* MINI MAP */}
-          {c && (
-            <div
-              className="mapWrap"
-              style={{
-                position: "relative",
-                zIndex: 5,
-                overflow: "hidden",
-                borderRadius: 10,
-                height: 160,
-                outline: "1px solid #f0f2f6",
-              }}
-            >
-              <LeafletMap
-                lat={c.lat}
-                lon={c.lon}
-                popup={loc.name}
-                routes={singleSeg}
-                user={userLocation}
-              />
-            </div>
-          )}
-
-          {/* TRAVEL BADGE */}
-          {act.travelTime && mode && (
-            <div
-              className="travelBadge"
-              style={{
-                background: "#1e3a8a",
-                color: "#fff",
-                padding: "6px 12px",
-                fontSize: 14,
-                borderRadius: 18,
-                width: "fit-content",
-                fontWeight: 800,
-              }}
-            >
-              {iconFor(mode)} {act.travelTime}
-            </div>
-          )}
+          <img
+            src={popupImage}
+            alt="full"
+            style={{
+              maxWidth: "92%",
+              maxHeight: "92%",
+              borderRadius: "12px",
+              boxShadow: "0 0 24px rgba(0,0,0,0.4)",
+            }}
+          />
         </div>
-
-      </div> {/* END card */}
-    </SortableActivity>
-  </li>
-);
+      )}
+    </div>
+  );
+}
