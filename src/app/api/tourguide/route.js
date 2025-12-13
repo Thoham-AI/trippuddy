@@ -10,9 +10,9 @@ export async function POST(req) {
     const result = await handler(body);
     return NextResponse.json(result);
   } catch (err) {
-    console.error("TOURGUIDE ROUTE ERROR:", err);
+    console.error("TOUR GUIDE ROUTE ERROR:", err);
     return NextResponse.json(
-      { ok: false, error: "Tour guide generation failed." },
+      { text: "Error generating guide info." },
       { status: 500 }
     );
   }

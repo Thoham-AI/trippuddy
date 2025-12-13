@@ -2,7 +2,7 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import handler from "./handler.node.js"; // CJS handler
+import handler from "./handler.node.js";
 
 export async function POST(req) {
   try {
@@ -11,6 +11,9 @@ export async function POST(req) {
     return NextResponse.json(result);
   } catch (err) {
     console.error("ALTERNATIVES ROUTE ERROR:", err);
-    return NextResponse.json({ text: "Error getting alternatives." }, { status: 500 });
+    return NextResponse.json(
+      { text: "Error getting alternatives." },
+      { status: 500 }
+    );
   }
 }

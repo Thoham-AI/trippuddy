@@ -11,6 +11,9 @@ export async function POST(req) {
     return NextResponse.json(result);
   } catch (err) {
     console.error("CHAT ROUTE ERROR:", err);
-    return NextResponse.json({ reply: "⚠️ Error in /api/chat" }, { status: 500 });
+    return NextResponse.json(
+      { reply: "⚠️ Error in /api/chat" },
+      { status: 500 }
+    );
   }
 }

@@ -11,6 +11,9 @@ export async function POST(req) {
     return NextResponse.json(result);
   } catch (err) {
     console.error("FOOD ROUTE ERROR:", err);
-    return NextResponse.json({ text: "Error getting food suggestions." }, { status: 500 });
+    return NextResponse.json(
+      { text: "Error getting food suggestions." },
+      { status: 500 }
+    );
   }
 }
