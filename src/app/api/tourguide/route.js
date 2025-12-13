@@ -1,4 +1,3 @@
-// src/app/api/tourguide/route.js
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
@@ -10,9 +9,9 @@ export async function POST(req) {
     const result = await handler(body);
     return NextResponse.json(result);
   } catch (err) {
-    console.error("TOUR GUIDE ROUTE ERROR:", err);
+    console.error("TOURGUIDE ROUTE ERROR:", err);
     return NextResponse.json(
-      { text: "Error generating guide info." },
+      { text: "Tour guide generation failed." },
       { status: 500 }
     );
   }

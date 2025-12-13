@@ -1,4 +1,3 @@
-// src/app/api/food/route.js
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";

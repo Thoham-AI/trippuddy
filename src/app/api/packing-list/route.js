@@ -1,8 +1,7 @@
-// src/app/api/packing-list/route.js
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import handler from "./handler.node.js";   // this file EXISTS ✔
+import handler from "./handler.node.js";
 
 export async function POST(req) {
   try {
