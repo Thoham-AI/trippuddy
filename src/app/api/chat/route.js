@@ -61,9 +61,9 @@ CLARIFICATION:
 }
 
 /**
- * Chat Route Handler — 100% Node runtime compatible
+ * Chat Route Handler — now using CommonJS export instead of ESM POST
  */
-export async function POST(req) {
+module.exports.POST = async function (req) {
   try {
     const body = await req.json();
     const messages = body.messages ?? [];
@@ -88,7 +88,7 @@ export async function POST(req) {
       temperature: 0.5,
     });
 
-    const reply = completion.choices[0].message.content;
+    const reply = completion.choices[0]?.message?.content || "";
 
     return NextResponse.json({ reply });
   } catch (err) {
@@ -98,4 +98,4 @@ export async function POST(req) {
       { status: 500 }
     );
   }
-}
+};

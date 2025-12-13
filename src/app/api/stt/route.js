@@ -1,27 +1,23 @@
+// src/app/api/stt/route.js
 export const runtime = "nodejs";
 
-import { NextResponse } from "next/server";
-import handleSTT from "./handler.node.js";
+const handler = require("./handler.node.js");
 
-export async function POST(req: Request) {
+module.exports.POST = async function (req) {
   try {
     const form = await req.formData();
-    const audio = form.get("audio") as File | null;
+    const audio = form.get("audio");
+    const result = await handler(audio);
 
-    if (!audio) {
-      return NextResponse.json(
-        { ok: false, text: "No audio file provided." },
-        { status: 400 }
-      );
-    }
-
-    const result = await handleSTT(audio);
-    return NextResponse.json(result);
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
   } catch (err) {
-    console.error("STT wrapper error:", err);
-    return NextResponse.json(
-      { ok: false, text: "STT route failed." },
+    console.error("ROUTE ERROR /api/stt:", err);
+    return new Response(
+      JSON.stringify({ ok: false, error: "STT failed" }),
       { status: 500 }
     );
   }
-}
+};
