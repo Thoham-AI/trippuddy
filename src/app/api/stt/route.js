@@ -1,22 +1,18 @@
 // src/app/api/stt/route.js
 export const runtime = "nodejs";
 
+import { NextResponse } from "next/server";
 import handler from "./handler.node.js";
 
 export async function POST(req) {
   try {
-    const form = await req.formData();
-    const audio = form.get("audio");
-    const result = await handler(audio);
-
-    return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    const body = await req.json();
+    const result = await handler(body);
+    return NextResponse.json(result);
   } catch (err) {
-    console.error("ROUTE ERROR /api/stt:", err);
-    return new Response(
-      JSON.stringify({ ok: false, error: "Speech-to-text failed" }),
+    console.error("STT ROUTE ERROR:", err);
+    return NextResponse.json(
+      { ok: false, text: "Speech recognition failed." },
       { status: 500 }
     );
   }

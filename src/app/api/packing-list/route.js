@@ -1,22 +1,18 @@
 // src/app/api/packing-list/route.js
 export const runtime = "nodejs";
 
+import { NextResponse } from "next/server";
 import handler from "./handler.node.js";
 
 export async function POST(req) {
   try {
     const body = await req.json();
-    const itinerary = body.itinerary;
-    const result = await handler(itinerary);
-
-    return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    const result = await handler(body);
+    return NextResponse.json(result);
   } catch (err) {
-    console.error("ROUTE ERROR /api/packing-list:", err);
-    return new Response(
-      JSON.stringify({ ok: false, error: "Packing list failed" }),
+    console.error("PACKING LIST ROUTE ERROR:", err);
+    return NextResponse.json(
+      { ok: false, text: "Packing list generation failed." },
       { status: 500 }
     );
   }
