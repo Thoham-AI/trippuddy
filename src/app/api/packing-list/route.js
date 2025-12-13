@@ -2,12 +2,12 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import handler from "./handler.node.js";
+import handler from "./handler.node.js";   // this file EXISTS ✔
 
 export async function POST(req) {
   try {
     const body = await req.json();
-    const result = await handler(body);
+    const result = await handler(body.itinerary);
     return NextResponse.json(result);
   } catch (err) {
     console.error("PACKING LIST ROUTE ERROR:", err);
