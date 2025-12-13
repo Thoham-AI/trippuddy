@@ -1,14 +1,13 @@
 // src/app/api/chat/route.js
-// Fully Node.js compatible, CommonJS-safe, Vercel production stable
+// Fully Node.js runtime compatible, ESM route, logic unchanged
 
 export const runtime = "nodejs";
 
-const { NextResponse } = require("next/server");
-const OpenAI = require("openai");
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
 
 /**
  * Detect language using the OpenAI API.
- * Runs inside handler for proper isolation.
  */
 async function detectLanguage(client, text) {
   try {
@@ -61,15 +60,15 @@ CLARIFICATION:
 }
 
 /**
- * Chat Route Handler — now using CommonJS export instead of ESM POST
+ * ✔ Final Chat Route Handler (ESM, valid for Next.js 16)
  */
-module.exports.POST = async function (req) {
+export async function POST(req) {
   try {
     const body = await req.json();
     const messages = body.messages ?? [];
     const lastMessage = messages[messages.length - 1]?.content || "";
 
-    // Instantiate client INSIDE handler (safe)
+    // Instantiate client INSIDE handler
     const client = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
@@ -77,7 +76,7 @@ module.exports.POST = async function (req) {
     // Detect language
     const lang = await detectLanguage(client, lastMessage);
 
-    // Generate AI response
+    // Generate reply
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -98,4 +97,4 @@ module.exports.POST = async function (req) {
       { status: 500 }
     );
   }
-};
+}

@@ -10,7 +10,7 @@ export async function POST(req) {
 
     return new Response(JSON.stringify(result), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
     console.error("ROUTE ERROR /api/itineraries:", err);

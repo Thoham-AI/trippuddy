@@ -1,16 +1,17 @@
 // src/app/api/packing-list/route.js
 export const runtime = "nodejs";
 
-const handler = require("./handler.node.js");
+import handler from "./handler.node.js";
 
-module.exports.POST = async function (req) {
+export async function POST(req) {
   try {
     const body = await req.json();
-    const result = await handler(body.itinerary);
+    const itinerary = body.itinerary;
+    const result = await handler(itinerary);
 
     return new Response(JSON.stringify(result), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
     console.error("ROUTE ERROR /api/packing-list:", err);
@@ -19,4 +20,4 @@ module.exports.POST = async function (req) {
       { status: 500 }
     );
   }
-};
+}

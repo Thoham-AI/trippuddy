@@ -1,10 +1,9 @@
 // src/app/api/alternatives/route.js
 
-const { NextResponse } = require("next/server");
-const OpenAI = require("openai");
-
-// ✅ Force this route to use Node.js runtime (not edge)
 export const runtime = "nodejs";
+
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
 
 // Lazily initialise the client so module evaluation is safer
 let client;
@@ -19,8 +18,7 @@ function getClient() {
   return client;
 }
 
-// ✅ CommonJS-safe POST route export
-module.exports.POST = async function (req) {
+export async function POST(req) {
   try {
     const { activity, location } = await req.json();
 
@@ -57,4 +55,4 @@ Return in bullet points.
       { status: 500 }
     );
   }
-};
+}

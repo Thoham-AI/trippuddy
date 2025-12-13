@@ -1,13 +1,11 @@
 // src/app/api/food/route.js
 
-const { NextResponse } = require("next/server");
-const OpenAI = require("openai");
-
-// Force Node.js runtime (OpenAI SDK cannot run on Edge)
 export const runtime = "nodejs";
 
-// CommonJS-safe POST export
-module.exports.POST = async function (req) {
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
+
+export async function POST(req) {
   try {
     const body = await req.json();
     const activity = body.activity || { title: "" };
@@ -51,4 +49,4 @@ Return bullet points only.
       { status: 500 }
     );
   }
-};
+}
