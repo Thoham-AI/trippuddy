@@ -1,7 +1,7 @@
 // src/app/api/itineraries/handler.node.js
 // PURE NODE CJS MODULE — safe for Vercel & Next.js
 
-const OpenAI = require("openai");
+import OpenAI from "openai";
 
 /* ------------------------------------------------------------------
    CONFIG & CONSTANTS
@@ -340,7 +340,8 @@ async function validateAndFixActivities(days, apiKey, weather) {
    MAIN HANDLER EXPORT
 -------------------------------------------------------------------*/
 
-module.exports = async function handleItineraryRequest(input) {
+export default async function handleItineraryRequest(input) {
+
   try {
     const data = input && typeof input === "object" ? input : {};
 

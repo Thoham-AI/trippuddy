@@ -1,33 +1,21 @@
-// Node-only STT handler using Whisper API (CommonJS)
+import OpenAI from "openai";
 
-const OpenAI = require("openai");
-
-module.exports = async function handleSTT(audio) {
+export default async function handleSTT(audio) {
   try {
-    if (!audio) {
-      return { ok: false, text: "No audio provided." };
-    }
+    if (!audio) return { ok: false, text: "No audio provided." };
 
-    const client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // Convert Blob to Buffer
     const arrayBuffer = await audio.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const response = await client.audio.transcriptions.create({
+    const res = await client.audio.transcriptions.create({
       file: buffer,
-      model: "gpt-4o-transcribe",
+      model: "gpt-4o-transcribe"
     });
 
-    return { ok: true, text: response.text };
+    return { ok: true, text: res.text };
   } catch (err) {
-    console.error("STT error:", err);
-    return {
-      ok: false,
-      text: "Speech recognition failed.",
-      details: String(err),
-    };
+    return { ok: false, text: "Speech recognition failed.", details: String(err) };
   }
-};
+}
