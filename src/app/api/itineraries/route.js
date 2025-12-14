@@ -47,16 +47,24 @@ function ensureMorningStart(days) {
 
 export async function POST(req) {
   try {
-    const { userPrompt, userLocation } = await req.json();
+    // ✅ ONLY CHANGE IS HERE
+    const body = await req.json();
+    const userPrompt =
+      body.userPrompt ||
+      body.prompt ||
+      body.text ||
+      body.message ||
+      "";
 
-    if (!userPrompt?.trim()) {
+    const userLocation = body.userLocation || null;
+
+    if (!userPrompt.trim()) {
       return NextResponse.json(
         { ok: false, error: "userPrompt is required" },
         { status: 400 }
       );
     }
 
-    // ✅ Create OpenAI client ONLY at request time
     const client = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
@@ -87,7 +95,7 @@ export async function POST(req) {
     return NextResponse.json({
       ok: true,
       itinerary,
-      userLocation: userLocation || null,
+      userLocation,
     });
   } catch (err) {
     console.error("ITINERARIES ERROR:", err);
