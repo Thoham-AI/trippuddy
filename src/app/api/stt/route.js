@@ -1,7 +1,12 @@
+// src/app/api/stt/route.js
 export const runtime = "nodejs";
 
-import { NextResponse } from "next/dist/server/web/spec-extension/response";
-import handler from "./handler.node.js";
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(req) {
   try {
@@ -10,13 +15,20 @@ export async function POST(req) {
 
     if (!audio) {
       return NextResponse.json(
-        { ok: false, text: "No audio received." },
+        { ok: false, text: "No audio file received." },
         { status: 400 }
       );
     }
 
-    const result = await handler(audio);
-    return NextResponse.json(result);
+    const arrayBuffer = await audio.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const response = await client.audio.transcriptions.create({
+      file: buffer,
+      model: "gpt-4o-transcribe",
+    });
+
+    return NextResponse.json({ ok: true, text: response.text });
   } catch (err) {
     console.error("STT ROUTE ERROR:", err);
     return NextResponse.json(
