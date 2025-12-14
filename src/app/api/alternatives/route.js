@@ -1,15 +1,16 @@
 // src/app/api/alternatives/route.js
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 export async function POST(req) {
   try {
+    const client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
     const { activity, location } = await req.json();
 
     const prompt = `
@@ -34,8 +35,9 @@ Return ONLY bullet points.
       max_tokens: 500,
     });
 
-    const text = res.choices[0]?.message?.content || "";
-    return NextResponse.json({ text });
+    return NextResponse.json({
+      text: res.choices[0]?.message?.content || "",
+    });
   } catch (err) {
     console.error("ALTERNATIVES ROUTE ERROR:", err);
     return NextResponse.json(

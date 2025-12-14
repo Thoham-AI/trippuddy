@@ -1,15 +1,17 @@
 // src/app/api/stt/route.js
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 export async function POST(req) {
   try {
+    // Must be inside POST()
+    const client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
     const formData = await req.formData();
     const audio = formData.get("audio");
 
@@ -21,14 +23,14 @@ export async function POST(req) {
     }
 
     const arrayBuffer = await audio.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const buffer = Buffer.from(arrayBuffer); // Node-only — must not run at top level
 
-    const response = await client.audio.transcriptions.create({
+    const result = await client.audio.transcriptions.create({
       file: buffer,
       model: "gpt-4o-transcribe",
     });
 
-    return NextResponse.json({ ok: true, text: response.text });
+    return NextResponse.json({ ok: true, text: result.text });
   } catch (err) {
     console.error("STT ROUTE ERROR:", err);
     return NextResponse.json(
