@@ -1,12 +1,21 @@
 // src/app/api/tourguide/route.js
+
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy client (prevents build-time crashes)
+let client;
+function getClient() {
+  if (!client) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY missing");
+    }
+    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return client;
+}
 
 export async function POST(req) {
   try {
@@ -20,7 +29,10 @@ DATA:
 ${JSON.stringify(body, null, 2)}
 `;
 
-    const res = await client.chat.completions.create({
+    // Create client at request time (safe)
+    const openai = getClient();
+
+    const res = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
