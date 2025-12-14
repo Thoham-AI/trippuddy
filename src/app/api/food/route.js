@@ -1,12 +1,21 @@
 // src/app/api/food/route.js
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy OpenAI client — prevents build-time crashes
+let client;
+function getClient() {
+  if (!client) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY missing");
+    }
+    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return client;
+}
 
 export async function POST(req) {
   try {
@@ -21,14 +30,16 @@ Area: ${location?.name || ""}, ${location?.country || ""}
 Recommend 5 places to eat nearby.
 Include:
 - cheap local food
-- mid-range
+- mid-range options
 - one nicer option
 
-For each: name, cuisine, price $, and what to order.
-Return ONLY bullet points.
+For each: name, cuisine, price $, what to order.
+Output ONLY bullet points.
 `;
 
-    const res = await client.chat.completions.create({
+    const openai = getClient();
+
+    const res = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: "You are a foodie local guide." },
@@ -38,8 +49,9 @@ Return ONLY bullet points.
       max_tokens: 500,
     });
 
-    const text = res.choices[0]?.message?.content || "";
-    return NextResponse.json({ text });
+    return NextResponse.json({
+      text: res.choices[0]?.message?.content || "",
+    });
   } catch (err) {
     console.error("FOOD ROUTE ERROR:", err);
     return NextResponse.json(

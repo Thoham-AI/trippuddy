@@ -1,12 +1,9 @@
 // src/app/api/packing-list/route.js
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 export async function POST(req) {
   try {
@@ -20,6 +17,11 @@ export async function POST(req) {
       );
     }
 
+    // Create OpenAI client *inside* POST — never at top level
+    const client = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
     const res = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -28,22 +30,20 @@ export async function POST(req) {
           content: `You are TripPuddy, an expert travel assistant.
 Given an itinerary JSON, produce a concise packing list in bullet points.
 Group items into: Clothing, Toiletries, Documents, Electronics, Other.
-Output human-friendly plain text only. Do NOT output JSON.`,
+Output plain text only, NOT JSON.`,
         },
-        {
-          role: "user",
-          content: JSON.stringify(itinerary),
-        },
+        { role: "user", content: JSON.stringify(itinerary) },
       ],
-      temperature: 0.7,
       max_tokens: 600,
+      temperature: 0.7,
     });
 
-    const text = res.choices[0]?.message?.content || "";
-
-    return NextResponse.json({ ok: true, text });
+    return NextResponse.json({
+      ok: true,
+      text: res.choices[0]?.message?.content || "",
+    });
   } catch (err) {
-    console.error("PACKING-LIST ROUTE ERROR:", err);
+    console.error("PACKING LIST ROUTE ERROR:", err);
     return NextResponse.json(
       { ok: false, text: "Packing list generation failed." },
       { status: 500 }
