@@ -1,104 +1,108 @@
-// src/app/api/itineraries/route.js
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
-function buildPrompt(userPrompt, userLocation) {
-  return `
-You are TripPuddy — an expert AI travel planner.
+async function fetchUnsplash(query) {
+  try {
+    const key = process.env.UNSPLASH_ACCESS_KEY;
+    if (!key) return null;
 
-User prompt: "${userPrompt}"
-Approx user location: ${JSON.stringify(userLocation || {}, null, 2)}
+    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(
+      query
+    )}&client_id=${key}&per_page=1&orientation=landscape`;
 
-Generate a realistic travel itinerary.
-
-RULES:
-- Detect number of days from the prompt
-- Output EXACTLY that many days
-- 4–7 activities per day
-- First activity starts in the morning
-- Return STRICT JSON only
-`;
-}
-
-function normalizeItinerary(raw) {
-  if (!raw || !Array.isArray(raw.days)) return { days: [] };
-  return {
-    days: raw.days.map((d, i) => ({
-      day: d.day ?? i + 1,
-      activities: Array.isArray(d.activities) ? d.activities : [],
-    })),
-  };
-}
-
-function ensureMorningStart(days) {
-  for (const day of days) {
-    if (!day.activities?.length) continue;
-    const a = day.activities[0];
-    a.time_of_day ||= "Morning";
-    a.arrival_time ||= "09:00";
-    a.suggested_departure_time ||= "10:30";
-    a.duration_minutes ||= 90;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.results?.[0]?.urls?.regular ?? null;
+  } catch {
+    return null;
   }
-  return days;
 }
 
 export async function POST(req) {
   try {
-    // ✅ ONLY CHANGE IS HERE
     const body = await req.json();
-    const userPrompt =
-      body.userPrompt ||
-      body.prompt ||
-      body.text ||
-      body.message ||
-      "";
-
-    const userLocation = body.userLocation || null;
-
-    if (!userPrompt.trim()) {
-      return NextResponse.json(
-        { ok: false, error: "userPrompt is required" },
-        { status: 400 }
-      );
-    }
 
     const client = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    const completion = await client.chat.completions.create({
+    const prompt = `
+You are TripPuddy, an expert travel planner.
+Return STRICT JSON.
+Rules:
+- detect number of days
+- 4–6 activities/day
+- include times
+- do NOT include image URLs
+- leave "image": "" for each activity
+
+Format:
+{
+  "days": [
+    {
+      "day": 1,
+      "activities": [
+        {
+          "title": "",
+          "arrival_time": "",
+          "duration_minutes": 60,
+          "description": "",
+          "latitude": 0,
+          "longitude": 0,
+          "image": ""
+        }
+      ]
+    }
+  ]
+}
+
+USER REQUEST:
+${body.userPrompt}
+`;
+
+    const res = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "Return ONLY valid JSON." },
-        { role: "user", content: buildPrompt(userPrompt, userLocation) },
+        { role: "system", content: "Return valid JSON only." },
+        { role: "user", content: prompt },
       ],
       temperature: 0.5,
-      max_tokens: 6000,
+      max_tokens: 2000,
     });
 
-    let text = completion.choices[0]?.message?.content || "";
-    text = text.replace(/```json|```/g, "").trim();
+    let raw = res.choices[0]?.message?.content || "";
+    raw = raw.replace(/```json|```/g, "").trim();
 
-    let parsed;
+    let itinerary;
     try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = { days: [] };
+      itinerary = JSON.parse(raw);
+    } catch (e) {
+      console.error("JSON parse failed:", raw);
+      return NextResponse.json(
+        { ok: false, error: "Invalid itinerary format" },
+        { status: 500 }
+      );
     }
 
-    let itinerary = normalizeItinerary(parsed);
-    itinerary.days = ensureMorningStart(itinerary.days);
+    // FIX: attach real working images
+    for (const day of itinerary.days ?? []) {
+      for (const act of day.activities ?? []) {
+        if (!act.title) continue;
+        const img = await fetchUnsplash(`${act.title} travel`);
+        if (img) act.image = img;
+      }
+    }
 
     return NextResponse.json({
       ok: true,
       itinerary,
-      userLocation,
     });
   } catch (err) {
-    console.error("ITINERARIES ERROR:", err);
+    console.error("ITINERARIES ROUTE ERROR:", err);
     return NextResponse.json(
       { ok: false, error: "Itinerary generation failed" },
       { status: 500 }

@@ -36,12 +36,13 @@ Return ONLY bullet points.
     });
 
     return NextResponse.json({
+      ok: true,
       text: res.choices[0]?.message?.content || "",
     });
   } catch (err) {
     console.error("ALTERNATIVES ROUTE ERROR:", err);
     return NextResponse.json(
-      { text: "Error getting alternatives." },
+      { ok: false, text: "Error getting alternatives." },
       { status: 500 }
     );
   }
