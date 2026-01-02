@@ -1,3 +1,4 @@
+// src/app/api/images/route.js
 import { NextResponse } from "next/server";
 
 // Ensure this runs on the Node.js runtime (needed for some deployments).
@@ -6,18 +7,22 @@ export const runtime = "nodejs";
 /* ------------------------------------------------------------------
    /api/images
 
-   Contract used across the app (TripCard + itinerary handler):
+   Contract:
      GET /api/images?q=<query>&limit=1[&placeId=...]
    Returns:
      {
        ok: true,
-       images: [{ url: "https://..." }],
-       place: { placeId, lat, lon, name, address } | null
+       images: [{ url }],
+       place: {
+         placeId,
+         lat,
+         lon,
+         name,
+         address,
+         url,       // Google Maps place URL
+         website    // ALIAS of url (NEW, important)
+       } | null
      }
-
-   This fixes the previous bug where /api/images incorrectly returned
-   an itinerary object, which caused image mismatches and downstream
-   coordinate issues.
 -------------------------------------------------------------------*/
 
 const FETCH_TIMEOUT_MS = 8000;
@@ -39,7 +44,6 @@ function normalizeKey(s) {
 }
 
 function stableHash(str) {
-  // Simple stable hash for deterministic image "sig"
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
@@ -51,7 +55,6 @@ function stableHash(str) {
 function unsplashSourceFallback(query) {
   const q = normalizeKey(query || "travel destination");
   const sig = stableHash(q);
-  // Deterministic Unsplash Source endpoint (no API key required)
   return `https://source.unsplash.com/featured/1200x700?${encodeURIComponent(
     query || "travel destination"
   )}&sig=${sig}`;
@@ -95,12 +98,14 @@ async function placeDetailsFromTextSearch(query, apiKey) {
     lat: r.geometry?.location?.lat ?? null,
     lon: r.geometry?.location?.lng ?? null,
     photoRef: r.photos?.[0]?.photo_reference || null,
-    url: r.url || null,
+    url: r.url || null,          // Google Maps URL
+    website: r.url || null,      // ✅ ALIAS (important)
   };
 }
 
 async function placeDetailsFromPlaceId(placeId, apiKey) {
   if (!apiKey || !placeId) return null;
+
   const detailURL =
     `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(
       placeId
@@ -122,6 +127,7 @@ async function placeDetailsFromPlaceId(placeId, apiKey) {
     lon: r.geometry?.location?.lng ?? null,
     photoRef: r.photos?.[0]?.photo_reference || null,
     url: r.url || null,
+    website: r.url || null,      // ✅ ALIAS
   };
 }
 
@@ -134,7 +140,6 @@ export async function GET(req) {
 
     const apiKey = process.env.GOOGLE_PLACES_API_KEY;
 
-    // Preferred: Google Places (returns BOTH photo and coordinates)
     let place = null;
     if (apiKey) {
       place = placeId
@@ -147,7 +152,6 @@ export async function GET(req) {
       images.push({ url: googlePhotoURL(place.photoRef, apiKey) });
     }
 
-    // Fallback: deterministic Unsplash source
     while (images.length < limit) {
       images.push({ url: unsplashSourceFallback(q || "travel destination") });
     }
@@ -163,6 +167,7 @@ export async function GET(req) {
             name: place.name,
             address: place.address,
             url: place.url,
+            website: place.website, // ✅ exposed to frontend
           }
         : null,
     });
