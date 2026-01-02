@@ -20,7 +20,7 @@ export const runtime = "nodejs";
          name,
          address,
          url,       // Google Maps place URL
-         website    // ALIAS of url (NEW, important)
+         website    // Official website (if available)
        } | null
      }
 -------------------------------------------------------------------*/
@@ -82,7 +82,7 @@ async function placeDetailsFromTextSearch(query, apiKey) {
   const placeId = first.place_id;
   const detailURL =
     `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}` +
-    `&fields=name,geometry,formatted_address,photos,url` +
+    `&fields=name,geometry,formatted_address,photos,url,website` +
     `&key=${apiKey}`;
 
   const dRes = await safeFetch(detailURL);
@@ -98,8 +98,8 @@ async function placeDetailsFromTextSearch(query, apiKey) {
     lat: r.geometry?.location?.lat ?? null,
     lon: r.geometry?.location?.lng ?? null,
     photoRef: r.photos?.[0]?.photo_reference || null,
-    url: r.url || null,          // Google Maps URL
-    website: r.url || null,      // ✅ ALIAS (important)
+    url: r.url || null,              // Google Maps URL
+    website: r.website || null,      // ✅ Official website (real)
   };
 }
 
@@ -110,7 +110,7 @@ async function placeDetailsFromPlaceId(placeId, apiKey) {
     `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(
       placeId
     )}` +
-    `&fields=name,geometry,formatted_address,photos,url` +
+    `&fields=name,geometry,formatted_address,photos,url,website` +
     `&key=${apiKey}`;
 
   const dRes = await safeFetch(detailURL);
@@ -127,7 +127,7 @@ async function placeDetailsFromPlaceId(placeId, apiKey) {
     lon: r.geometry?.location?.lng ?? null,
     photoRef: r.photos?.[0]?.photo_reference || null,
     url: r.url || null,
-    website: r.url || null,      // ✅ ALIAS
+    website: r.website || null,      // ✅ Official website (real)
   };
 }
 
@@ -166,8 +166,8 @@ export async function GET(req) {
             lon: place.lon,
             name: place.name,
             address: place.address,
-            url: place.url,
-            website: place.website, // ✅ exposed to frontend
+            url: place.url,           // Google Maps place page
+            website: place.website,   // ✅ Official website (if any)
           }
         : null,
     });

@@ -54,9 +54,7 @@ function extractDestinationHint(userPrompt) {
 
   // Other common: "Singapore 1 day itinerary"
   // Heuristic: if the prompt starts with a place name (first 1-4 words) before "day/days"
-  const startMatch = text.match(
-    /^([A-Za-z][A-Za-z\s-]{2,})(?:\s+\d+\s+day|\s+\d+\s+days|\s+day|\s+days)\b/i
-  );
+  const startMatch = text.match(/^([A-Za-z][A-Za-z\s-]{2,})(?:\s+\d+\s+day|\s+\d+\s+days|\s+day|\s+days)\b/i);
   if (startMatch?.[1]) return startMatch[1].trim();
 
   // Lightweight keyword fallbacks (optional; keeps behavior stable)
@@ -88,7 +86,9 @@ async function resolveImage(a, destinationHint = "") {
     const query = encodeURIComponent(queryText);
     const placeIdParam = a.placeId ? `&placeId=${a.placeId}` : "";
 
-    const res = await fetch(`${getBaseUrl()}/api/images?q=${query}${placeIdParam}&limit=1`);
+    const res = await fetch(
+      `${getBaseUrl()}/api/images?q=${query}${placeIdParam}&limit=1`
+    );
 
     const data = await res.json();
 
@@ -114,11 +114,7 @@ Rules:
 - 4–6 activities per day
 - Morning start (08:00–09:30)
 - Real places only
-${
-  destinationHint
-    ? `- ALL activities MUST be within ${destinationHint}. Do NOT include any place outside ${destinationHint}.`
-    : ""
-}
+${destinationHint ? `- ALL activities MUST be within ${destinationHint}. Do NOT include any place outside ${destinationHint}.` : ""}
 
 Return STRICT JSON:
 
@@ -180,7 +176,9 @@ export async function handleItineraryRequest(input) {
       itinerary = { days: [] };
     }
 
-    const days = Array.isArray(itinerary.days) ? itinerary.days.slice(0, MAX_DAYS) : [];
+    const days = Array.isArray(itinerary.days)
+      ? itinerary.days.slice(0, MAX_DAYS)
+      : [];
 
     /* -------------------- IMAGE HYDRATION (HYBRID) -------------------- */
     await Promise.allSettled(
@@ -195,7 +193,7 @@ export async function handleItineraryRequest(input) {
 
             // Hydrate image + coordinates (when available) per activity.
             // This prevents wrong-map-center issues caused by missing coords.
-            if (!a.image || !a.latitude || !a.longitude || !a.website) {
+            if (!a.image || !a.latitude || !a.longitude || !a.website || !a.mapsUrl) {
               const resolved = await resolveImage(a, destinationHint);
 
               if (!a.image && resolved?.url) a.image = resolved.url;
@@ -206,10 +204,15 @@ export async function handleItineraryRequest(input) {
                 if (!a.latitude && Number.isFinite(Number(p.lat))) a.latitude = Number(p.lat);
                 if (!a.longitude && Number.isFinite(Number(p.lon))) a.longitude = Number(p.lon);
 
-                // ✅ NEW: persist website so ActivityCard opens it before Google Maps
-                // /api/images may provide p.website and/or p.url; accept either.
-                const website = p.website || p.url || null;
-                if (!a.website && website) a.website = website;
+                // ✅ Official website ONLY (so pink pin truly means "website")
+                if (!a.website && p.website) {
+                  a.website = p.website;
+                }
+
+                // ✅ Keep Google Maps place page separately for fallback
+                if (!a.mapsUrl && p.url) {
+                  a.mapsUrl = p.url;
+                }
 
                 // UI expects act.coordinates = { lat, lon }
                 if (
