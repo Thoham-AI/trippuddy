@@ -2,6 +2,29 @@
 
 import { useEffect, useRef, useState } from "react";
 
+/* ------------------------------------------------------------------
+   Google Maps–style pin icon (inline, no external dependency)
+-------------------------------------------------------------------*/
+function GoogleMapPinIcon({ size = 16 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
+      style={{ display: "block" }}
+    >
+      <path
+        d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
+        fill="currentColor"
+      />
+      <circle cx="12" cy="9" r="2.5" fill="#ffffff" />
+    </svg>
+  );
+}
+
 const isRealPhoto = (url) => {
   if (!url) return false;
   return !url.includes("maps.googleapis.com/maps/api/staticmap");
@@ -100,14 +123,12 @@ export default function ActivityCard({
           <button
             type="button"
             onPointerDown={(e) => {
-              // Prevent drag/parent handlers from hijacking the click
               e.stopPropagation();
             }}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
 
-              // Prefer website of THAT place (only if available)
               const website =
                 act?.website ||
                 act?.url ||
@@ -125,7 +146,6 @@ export default function ActivityCard({
                 return;
               }
 
-              // Fallback: Google Maps (pin by coordinates if available, else search by name)
               const lat = c?.lat;
               const lon = c?.lon;
               const label = encodeURIComponent(act.title || loc.name || "Destination");
@@ -156,9 +176,9 @@ export default function ActivityCard({
             }}
             title="Open official website (or Google Maps)"
           >
-            <span style={{ fontSize: 14 }}>📍</span>
-            <span>
-              {flag(loc.country)} {loc.name}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <GoogleMapPinIcon size={16} />
+              Website / Map
             </span>
           </button>
 
@@ -216,7 +236,6 @@ export default function ActivityCard({
 
       {/* RIGHT */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {/* PHOTO ONLY */}
         <div
           style={{
             width: "100%",
@@ -251,7 +270,6 @@ export default function ActivityCard({
           )}
         </div>
 
-        {/* LEAFLET MAP */}
         {c && (
           <div style={{ height: 160, borderRadius: 10, overflow: "hidden" }}>
             <LeafletMap
