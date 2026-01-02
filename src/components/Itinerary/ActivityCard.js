@@ -96,10 +96,7 @@ export default function ActivityCard({
             gap: 10,
           }}
         >
-          <div>
-            📍 {flag(loc.country)} {loc.name}
-          </div>
-
+          {/* CLICKABLE PIN PILL (colored) */}
           <button
             type="button"
             onPointerDown={(e) => {
@@ -110,11 +107,77 @@ export default function ActivityCard({
               e.preventDefault();
               e.stopPropagation();
 
+              // Prefer website of THAT place (only if available)
+              const website =
+                act?.website ||
+                act?.url ||
+                act?.link ||
+                loc?.website ||
+                loc?.url ||
+                loc?.link ||
+                null;
+
+              if (website && typeof website === "string") {
+                const safeUrl = website.startsWith("http")
+                  ? website
+                  : `https://${website}`;
+                window.open(safeUrl, "_blank", "noopener,noreferrer");
+                return;
+              }
+
+              // Fallback: Google Maps (pin by coordinates if available, else search by name)
+              const lat = c?.lat;
+              const lon = c?.lon;
+              const label = encodeURIComponent(act.title || loc.name || "Destination");
+
+              const url =
+                typeof lat === "number" && typeof lon === "number"
+                  ? `https://www.google.com/maps?q=${lat},${lon}(${label})`
+                  : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                      `${act.title || ""} ${loc.name || ""} ${loc.country || ""}`.trim()
+                    )}`;
+
+              window.open(url, "_blank", "noopener,noreferrer");
+            }}
+            style={{
+              border: "none",
+              background: "linear-gradient(135deg,#ec4899,#db2777)",
+              color: "#fff",
+              padding: "6px 12px",
+              borderRadius: 999,
+              fontSize: 13,
+              fontWeight: 800,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+            title="Open official website (or Google Maps)"
+          >
+            <span style={{ fontSize: 14 }}>📍</span>
+            <span>
+              {flag(loc.country)} {loc.name}
+            </span>
+          </button>
+
+          {/* WEATHER BUTTON (unchanged) */}
+          <button
+            type="button"
+            onPointerDown={(e) => {
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+
               const lat = c?.lat;
               const lon = c?.lon;
 
               if (typeof lat === "number" && typeof lon === "number") {
-                const url = `https://openweathermap.org/weathermap?lat=${lat}&lon=${lon}&zoom=10`;
+                const label = encodeURIComponent(act.title || loc.name || "Location");
+                const url = `/weather-map?lat=${lat}&lon=${lon}&label=${label}`;
                 window.open(url, "_blank", "noopener,noreferrer");
               }
             }}
@@ -136,7 +199,7 @@ export default function ActivityCard({
               whiteSpace: "nowrap",
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
             }}
-            title="View detailed weather on OpenWeather"
+            title="View detailed weather on OpenWeather map"
           >
             {weatherLoading
               ? "Weather…"
@@ -180,7 +243,6 @@ export default function ActivityCard({
                 cursor: "zoom-in",
               }}
               onError={(e) => {
-                // If fallback.jpg is missing or URL is bad, show placeholder text instead
                 e.currentTarget.style.display = "none";
               }}
             />

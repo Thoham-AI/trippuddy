@@ -41,6 +41,32 @@ async function safeFetch(url, timeout = 8000) {
 }
 
 /* ---------------------------------------------------------------
+   DESTINATION HINT (new)
+   Purpose: keep itinerary + image/geo hydration locked to the same city
+---------------------------------------------------------------*/
+function extractDestinationHint(userPrompt) {
+  if (!userPrompt || typeof userPrompt !== "string") return "";
+  const text = userPrompt.trim();
+
+  // Most common: "1 day in Singapore", "3 days in Ho Chi Minh City"
+  const inMatch = text.match(/\bin\s+([A-Za-z][A-Za-z\s-]{2,})(?:[,.]|$)/i);
+  if (inMatch?.[1]) return inMatch[1].trim();
+
+  // Other common: "Singapore 1 day itinerary"
+  // Heuristic: if the prompt starts with a place name (first 1-4 words) before "day/days"
+  const startMatch = text.match(/^([A-Za-z][A-Za-z\s-]{2,})(?:\s+\d+\s+day|\s+\d+\s+days|\s+day|\s+days)\b/i);
+  if (startMatch?.[1]) return startMatch[1].trim();
+
+  // Lightweight keyword fallbacks (optional; keeps behavior stable)
+  const p = text.toLowerCase();
+  if (p.includes("singapore")) return "Singapore";
+  if (p.includes("hanoi")) return "Hanoi";
+  if (p.includes("ho chi minh") || p.includes("saigon")) return "Ho Chi Minh City";
+
+  return "";
+}
+
+/* ---------------------------------------------------------------
    HYBRID IMAGE RESOLVER
 ---------------------------------------------------------------*/
 function getBaseUrl() {
@@ -51,9 +77,13 @@ function getBaseUrl() {
   return "http://localhost:3000";
 }
 
-async function resolveImage(a) {
+async function resolveImage(a, destinationHint = "") {
   try {
-    const query = encodeURIComponent(a.title || "tourist attraction");
+    // Bias the query toward the destination to prevent cross-city drift (e.g., Adelaide)
+    const baseTitle = a.title || "tourist attraction";
+    const queryText = destinationHint ? `${baseTitle}, ${destinationHint}` : baseTitle;
+
+    const query = encodeURIComponent(queryText);
     const placeIdParam = a.placeId ? `&placeId=${a.placeId}` : "";
 
     const res = await fetch(
@@ -72,9 +102,9 @@ async function resolveImage(a) {
 }
 
 /* ---------------------------------------------------------------
-   GPT PROMPT (unchanged)
+   GPT PROMPT (updated with destination constraint)
 ---------------------------------------------------------------*/
-function buildPrompt(prompt) {
+function buildPrompt(prompt, destinationHint = "") {
   return `
 You are TripPuddy, an expert travel planner.
 
@@ -84,6 +114,7 @@ Rules:
 - 4–6 activities per day
 - Morning start (08:00–09:30)
 - Real places only
+${destinationHint ? `- ALL activities MUST be within ${destinationHint}. Do NOT include any place outside ${destinationHint}.` : ""}
 
 Return STRICT JSON:
 
@@ -120,13 +151,16 @@ export async function handleItineraryRequest(input) {
     const userPrompt = input.userPrompt.trim();
     const userLocation = input.userLocation || DEFAULT_LOCATION;
 
+    // Destination hint used BOTH for the LLM constraint and for image/geo lookup bias
+    const destinationHint = extractDestinationHint(userPrompt);
+
     const client = await getOpenAI();
 
     const completion = await client.chat.completions.create({
       model: OPENAI_MODEL,
       messages: [
         { role: "system", content: "Return JSON only." },
-        { role: "user", content: buildPrompt(userPrompt) },
+        { role: "user", content: buildPrompt(userPrompt, destinationHint) },
       ],
       temperature: 0.5,
       max_tokens: OPENAI_MAX_TOKENS,
@@ -160,7 +194,7 @@ export async function handleItineraryRequest(input) {
             // Hydrate image + coordinates (when available) per activity.
             // This prevents wrong-map-center issues caused by missing coords.
             if (!a.image || !a.latitude || !a.longitude) {
-              const resolved = await resolveImage(a);
+              const resolved = await resolveImage(a, destinationHint);
 
               if (!a.image && resolved?.url) a.image = resolved.url;
 
@@ -171,7 +205,11 @@ export async function handleItineraryRequest(input) {
                 if (!a.longitude && Number.isFinite(Number(p.lon))) a.longitude = Number(p.lon);
 
                 // UI expects act.coordinates = { lat, lon }
-                if (!a.coordinates && Number.isFinite(Number(a.latitude)) && Number.isFinite(Number(a.longitude))) {
+                if (
+                  !a.coordinates &&
+                  Number.isFinite(Number(a.latitude)) &&
+                  Number.isFinite(Number(a.longitude))
+                ) {
                   a.coordinates = { lat: Number(a.latitude), lon: Number(a.longitude) };
                 }
               }
