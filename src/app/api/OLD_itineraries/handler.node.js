@@ -43,31 +43,19 @@ async function safeFetch(url, timeout = 8000) {
 /* ---------------------------------------------------------------
    HYBRID IMAGE RESOLVER
 ---------------------------------------------------------------*/
-function getBaseUrl() {
-  if (process.env.NEXT_PUBLIC_BASE_URL) return process.env.NEXT_PUBLIC_BASE_URL;
-  // Vercel provides VERCEL_URL without protocol
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  // Fallback for local dev
-  return "http://localhost:3000";
-}
-
 async function resolveImage(a) {
   try {
     const query = encodeURIComponent(a.title || "tourist attraction");
     const placeIdParam = a.placeId ? `&placeId=${a.placeId}` : "";
 
     const res = await fetch(
-      `${getBaseUrl()}/api/images?q=${query}${placeIdParam}&limit=1`
+      `${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/images?q=${query}${placeIdParam}&limit=1`
     );
 
     const data = await res.json();
-
-    return {
-      url: data?.images?.[0]?.url || null,
-      place: data?.place || null,
-    };
+    return data?.images?.[0]?.url || null;
   } catch {
-    return { url: null, place: null };
+    return null;
   }
 }
 
@@ -155,26 +143,8 @@ export async function handleItineraryRequest(input) {
 
         await Promise.allSettled(
           day.activities.map(async (a) => {
-            if (!a.title) return;
-
-            // Hydrate image + coordinates (when available) per activity.
-            // This prevents wrong-map-center issues caused by missing coords.
-            if (!a.image || !a.latitude || !a.longitude) {
-              const resolved = await resolveImage(a);
-
-              if (!a.image && resolved?.url) a.image = resolved.url;
-
-              const p = resolved?.place;
-              if (p) {
-                if (!a.placeId && p.placeId) a.placeId = p.placeId;
-                if (!a.latitude && Number.isFinite(Number(p.lat))) a.latitude = Number(p.lat);
-                if (!a.longitude && Number.isFinite(Number(p.lon))) a.longitude = Number(p.lon);
-
-                // UI expects act.coordinates = { lat, lon }
-                if (!a.coordinates && Number.isFinite(Number(a.latitude)) && Number.isFinite(Number(a.longitude))) {
-                  a.coordinates = { lat: Number(a.latitude), lon: Number(a.longitude) };
-                }
-              }
+            if (!a.image && a.title) {
+              a.image = await resolveImage(a);
             }
           })
         );

@@ -9,10 +9,7 @@ import BudgetSummary from "@/components/Itinerary/BudgetSummary.js";
 import TextModal from "@/components/Itinerary/TextModal.js";
 import TripMap from "@/components/Itinerary/TripMap.js";
 
-import {
-  DndContext,
-  closestCenter,
-} from "@dnd-kit/core";
+import { DndContext, closestCenter } from "@dnd-kit/core";
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -295,7 +292,9 @@ function mixedOptimizeActivities(activities) {
   });
 
   const order = [0];
-  const pool = Array.from({ length: orderedInClusters.length }, (_, i) => i).slice(1);
+  const pool = Array.from({ length: orderedInClusters.length }, (_, i) => i).slice(
+    1
+  );
   while (pool.length) {
     const last = order[order.length - 1];
     let bestIdx = 0;
@@ -319,7 +318,6 @@ function mixedOptimizeActivities(activities) {
 /* ----------------------- main component ----------------------- */
 
 export default function DestinationsPage() {
-
   const parseCost = (str) => {
     if (!str) return 0;
     const nums = (str.match(/\d+(\.\d+)?/g) || []).map(Number);
@@ -446,21 +444,15 @@ export default function DestinationsPage() {
           coordinates:
             a.coordinates ||
             a.coords ||
-            (a.latitude && a.longitude
-              ? { lat: a.latitude, lon: a.longitude }
-              : null),
+            (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null),
           location: a.location || {},
-          image:
-            a.image ||
-            (a.latitude && a.longitude
-              ? `https://maps.googleapis.com/maps/api/staticmap?center=${a.latitude},${a.longitude}&zoom=15&size=600x400&markers=color:red%7C${a.latitude},${a.longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
-              : null),
+          image: a.image || null, // ✅ fixed
           link: a.link || null,
           weather: a.weather || null,
           travelTime: a.travelTime ?? null,
         }));
 
-      // 2) Modern backend: itinerary.days[]
+        // 2) Modern backend: itinerary.days[]
       } else if (Array.isArray(json.itinerary?.days)) {
         const apiActivities = json.itinerary.days[0]?.activities || [];
 
@@ -470,24 +462,15 @@ export default function DestinationsPage() {
           durationMinutes: a.duration_minutes || null,
           departure_time: a.suggested_departure_time || null,
           distanceFromPreviousKm: a.distance_km_from_previous ?? null,
-          travelTimeFromPreviousMinutes:
-            a.travel_time_minutes_from_previous ?? null,
+          travelTimeFromPreviousMinutes: a.travel_time_minutes_from_previous ?? null,
           title: a.title || "Activity",
           details: a.description || "",
-          cost_estimate: a.estimated_cost
-            ? `Approx ${a.estimated_cost} AUD`
-            : "",
+          cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
           coordinates:
             a.coordinates ||
-            (a.latitude && a.longitude
-              ? { lat: a.latitude, lon: a.longitude }
-              : null),
+            (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null),
           location: { name: a.title, country: "AU" },
-          image:
-            a.image ||
-            (a.latitude && a.longitude
-              ? `https://maps.googleapis.com/maps/api/staticmap?center=${a.latitude},${a.longitude}&zoom=15&size=600x400&markers=color:red%7C${a.latitude},${a.longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
-              : null),
+          image: a.image || null, // ✅ fixed
           weather: json.weather || null,
           weatherTemp: json.weather?.main?.temp ?? null,
           weatherDesc: json.weather?.weather?.[0]?.description ?? null,
@@ -498,7 +481,7 @@ export default function DestinationsPage() {
           travelTime: null,
         }));
 
-      // 3) Legacy shape: itinerary.itinerary.activities
+        // 3) Legacy shape: itinerary.itinerary.activities
       } else if (json.itinerary?.itinerary?.activities) {
         const apiActivities = json.itinerary.itinerary.activities;
         activities = apiActivities.map((a) => ({
@@ -508,15 +491,9 @@ export default function DestinationsPage() {
           cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
           coordinates:
             a.coordinates ||
-            (a.latitude && a.longitude
-              ? { lat: a.latitude, lon: a.longitude }
-              : null),
+            (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null),
           location: { name: a.title, country: "AU" },
-          image:
-            a.image ||
-            (a.latitude && a.longitude
-              ? `https://maps.googleapis.com/maps/api/staticmap?center=${a.latitude},${a.longitude}&zoom=15&size=600x400&markers=color:red%7C${a.latitude},${a.longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
-              : null),
+          image: a.image || null, // ✅ fixed
           weather: json.weather || null,
           weatherTemp: json.weather?.main?.temp ?? null,
           weatherDesc: json.weather?.weather?.[0]?.description ?? null,
@@ -524,23 +501,17 @@ export default function DestinationsPage() {
           travelTime: null,
         }));
 
-      // 4) Fallback shape
+        // 4) Fallback shape
       } else {
         const slots = json.itinerary?.slots || json.slots || [];
         activities = slots.map((slot) => ({
           time: slot.time || "Flexible",
           title: slot.placeName || slot.title || "Activity",
           details: slot.description || "",
-          cost_estimate: slot.approxCostAUD
-            ? `Approx ${slot.approxCostAUD} AUD`
-            : "",
+          cost_estimate: slot.approxCostAUD ? `Approx ${slot.approxCostAUD} AUD` : "",
           coordinates: slot.coordinates || null,
           location: slot.location || {},
-          image:
-            slot.image ||
-            (slot.coordinates?.lat && slot.coordinates?.lon
-              ? `https://maps.googleapis.com/maps/api/staticmap?center=${slot.coordinates.lat},${slot.coordinates.lon}&zoom=15&size=600x400&markers=color:red%7C${slot.coordinates.lat},${slot.coordinates.lon}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
-              : null),
+          image: slot.image || null, // ✅ fixed (no static map)
           link: slot.link || null,
           weather: slot.weather || null,
           travelTime: null,
@@ -653,9 +624,7 @@ export default function DestinationsPage() {
     );
     const csv = Papa.unparse(rows);
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8;" })
-    );
+    link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
     link.download = "itinerary.csv";
     link.click();
   };
@@ -775,8 +744,7 @@ export default function DestinationsPage() {
           style={{
             position: "absolute",
             inset: 0,
-            background:
-              "linear-gradient(to bottom, rgba(0,0,0,.25), rgba(0,0,0,0))",
+            background: "linear-gradient(to bottom, rgba(0,0,0,.25), rgba(0,0,0,0))",
           }}
         />
         <div
@@ -867,10 +835,7 @@ export default function DestinationsPage() {
         {/* Itinerary list (DnD) */}
         {data.itinerary?.[activeDay] && (
           <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext
-              items={itemsForDay}
-              strategy={verticalListSortingStrategy}
-            >
+            <SortableContext items={itemsForDay} strategy={verticalListSortingStrategy}>
               <ul
                 style={{
                   listStyle: "none",
@@ -889,24 +854,54 @@ export default function DestinationsPage() {
                   const daySegments = routesByDay[activeDay]?.segments || [];
                   const singleSeg = segmentForIndex(daySegments, i);
 
-                  return (
-                    <li key={`act-${i}`} style={{ marginBottom: 18 }}>
-                      <SortableActivity id={`act-${i}`}>
-                        <ActivityCard
-                          act={act}
-                          loc={loc}
-                          mode={mode}
-                          coordinates={c}
-                          singleSeg={singleSeg}
-                          LeafletMap={LeafletMap}
-                          userLocation={userLocation}
-                          flag={flag}
-                          iconFor={iconFor}
-                          setPopupImage={setPopupImage}
-                        />
-                      </SortableActivity>
-                    </li>
-                  );
+                  // travel label (prefer routed label, fallback to estimate)
+let travelLabel = act.travelTime;
+let travelMode = mode;
+
+if (!travelLabel && prevC && c) {
+  const d = distKm(prevC, c);
+  travelMode = modeFor(d);
+  const mins = fallbackMinutes(d, travelMode);
+  travelLabel = minutesToStr(mins, travelMode);
+}
+
+return (
+  <li key={`act-${i}`} style={{ marginBottom: 18 }}>
+    {/* Travel-time row BETWEEN destinations */}
+    {i > 0 && travelLabel && (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          margin: "0 0 10px 6px",
+          color: "#374151",
+          fontSize: 14,
+        }}
+      >
+        <span style={{ fontSize: 16 }}>{iconFor(travelMode)}</span>
+        <span style={{ fontWeight: 600 }}>Travel:</span>
+        <span>{travelLabel}</span>
+      </div>
+    )}
+
+    <SortableActivity id={`act-${i}`}>
+      <ActivityCard
+        act={act}
+        loc={loc}
+        mode={mode}
+        coordinates={c}
+        singleSeg={singleSeg}
+        LeafletMap={LeafletMap}
+        userLocation={userLocation}
+        flag={flag}
+        iconFor={iconFor}
+        setPopupImage={setPopupImage}
+      />
+    </SortableActivity>
+  </li>
+);
+
                 })}
               </ul>
             </SortableContext>
