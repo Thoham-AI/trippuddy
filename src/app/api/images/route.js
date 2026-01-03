@@ -1,29 +1,7 @@
 // src/app/api/images/route.js
 import { NextResponse } from "next/server";
 
-// Ensure this runs on the Node.js runtime (needed for some deployments).
 export const runtime = "nodejs";
-
-/* ------------------------------------------------------------------
-   /api/images
-
-   Contract:
-     GET /api/images?q=<query>&limit=1[&placeId=...]
-   Returns:
-     {
-       ok: true,
-       images: [{ url }],
-       place: {
-         placeId,
-         lat,
-         lon,
-         name,
-         address,
-         url,       // Google Maps place URL
-         website    // Official website (if available)
-       } | null
-     }
--------------------------------------------------------------------*/
 
 const FETCH_TIMEOUT_MS = 8000;
 
@@ -37,6 +15,18 @@ async function safeFetch(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
   } finally {
     clearTimeout(id);
   }
+}
+
+// Use ANY key you already have configured (works locally + Vercel)
+function getGoogleKey() {
+  return (
+    process.env.GOOGLE_PLACES_API_KEY ||
+    process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY ||
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+    process.env.NEXT_PUBLIC_PLACES_API_KEY ||
+    ""
+  );
 }
 
 function normalizeKey(s) {
@@ -65,56 +55,19 @@ function googlePhotoURL(photoRef, apiKey) {
   return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1600&photoreference=${photoRef}&key=${apiKey}`;
 }
 
-async function placeDetailsFromTextSearch(query, apiKey) {
-  if (!apiKey || !query) return null;
-
-  const textURL =
-    `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(
-      query
-    )}&key=${apiKey}`;
-
-  const tRes = await safeFetch(textURL);
-  if (!tRes || !tRes.ok) return null;
-  const tJson = await tRes.json();
-  const first = tJson?.results?.[0];
-  if (!first?.place_id) return null;
-
-  const placeId = first.place_id;
-  const detailURL =
-    `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}` +
-    `&fields=name,geometry,formatted_address,photos,url,website` +
-    `&key=${apiKey}`;
-
-  const dRes = await safeFetch(detailURL);
-  if (!dRes || !dRes.ok) return null;
-  const dJson = await dRes.json();
-  const r = dJson?.result;
-  if (!r) return null;
-
-  return {
-    placeId,
-    name: r.name || null,
-    address: r.formatted_address || null,
-    lat: r.geometry?.location?.lat ?? null,
-    lon: r.geometry?.location?.lng ?? null,
-    photoRef: r.photos?.[0]?.photo_reference || null,
-    url: r.url || null,              // Google Maps URL
-    website: r.website || null,      // ✅ Official website (real)
-  };
-}
-
-async function placeDetailsFromPlaceId(placeId, apiKey) {
+async function placeDetailsByPlaceId(placeId, apiKey) {
   if (!apiKey || !placeId) return null;
 
   const detailURL =
     `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(
       placeId
     )}` +
-    `&fields=name,geometry,formatted_address,photos,url,website` +
+    `&fields=name,geometry,formatted_address,photos,url,website` + // ✅ include website
     `&key=${apiKey}`;
 
   const dRes = await safeFetch(detailURL);
   if (!dRes || !dRes.ok) return null;
+
   const dJson = await dRes.json();
   const r = dJson?.result;
   if (!r) return null;
@@ -126,9 +79,26 @@ async function placeDetailsFromPlaceId(placeId, apiKey) {
     lat: r.geometry?.location?.lat ?? null,
     lon: r.geometry?.location?.lng ?? null,
     photoRef: r.photos?.[0]?.photo_reference || null,
-    url: r.url || null,
-    website: r.website || null,      // ✅ Official website (real)
+    mapsUrl: r.url || null,        // ✅ explicit Google Maps URL
+    website: r.website || null,    // ✅ official website
   };
+}
+
+async function placeDetailsFromTextSearch(query, apiKey) {
+  if (!apiKey || !query) return null;
+
+  const textURL = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(
+    query
+  )}&key=${apiKey}`;
+
+  const tRes = await safeFetch(textURL);
+  if (!tRes || !tRes.ok) return null;
+
+  const tJson = await tRes.json();
+  const first = tJson?.results?.[0];
+  if (!first?.place_id) return null;
+
+  return await placeDetailsByPlaceId(first.place_id, apiKey);
 }
 
 export async function GET(req) {
@@ -138,12 +108,12 @@ export async function GET(req) {
     const limit = Math.max(1, Math.min(10, Number(searchParams.get("limit") || 1)));
     const placeId = (searchParams.get("placeId") || "").trim();
 
-    const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+    const apiKey = getGoogleKey();
 
     let place = null;
     if (apiKey) {
       place = placeId
-        ? await placeDetailsFromPlaceId(placeId, apiKey)
+        ? await placeDetailsByPlaceId(placeId, apiKey)
         : await placeDetailsFromTextSearch(q, apiKey);
     }
 
@@ -151,7 +121,6 @@ export async function GET(req) {
     if (place?.photoRef && apiKey) {
       images.push({ url: googlePhotoURL(place.photoRef, apiKey) });
     }
-
     while (images.length < limit) {
       images.push({ url: unsplashSourceFallback(q || "travel destination") });
     }
@@ -166,8 +135,8 @@ export async function GET(req) {
             lon: place.lon,
             name: place.name,
             address: place.address,
-            url: place.url,           // Google Maps place page
-            website: place.website,   // ✅ Official website (if any)
+            mapsUrl: place.mapsUrl,     // ✅ always available when Google returns it
+            website: place.website,     // ✅ official site when available
           }
         : null,
     });

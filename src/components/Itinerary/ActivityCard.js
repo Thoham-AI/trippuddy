@@ -2,10 +2,38 @@
 
 import { useEffect, useRef, useState } from "react";
 
+/* Google Maps–style pin icon (inline, no dependency) */
+function GoogleMapPinIcon({ size = 16 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
+      style={{ display: "block" }}
+    >
+      <path
+        d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
+        fill="currentColor"
+      />
+      <circle cx="12" cy="9" r="2.5" fill="#ffffff" />
+    </svg>
+  );
+}
+
 const isRealPhoto = (url) => {
   if (!url) return false;
   return !url.includes("maps.googleapis.com/maps/api/staticmap");
 };
+
+function ensureHttp(url) {
+  if (!url) return "";
+  const u = String(url).trim();
+  if (!u) return "";
+  return u.startsWith("http") ? u : `https://${u}`;
+}
 
 export default function ActivityCard({
   act,
@@ -23,7 +51,7 @@ export default function ActivityCard({
 }) {
   const c = coordinates;
 
-  // Weather state (per activity coordinates) — restored working version
+  /* ---------------- WEATHER (unchanged) ---------------- */
   const [weather, setWeather] = useState(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const weatherReq = useRef(0);
@@ -48,9 +76,7 @@ export default function ActivityCard({
           cache: "no-store",
         });
         const data = await res.json();
-
         if (seq !== weatherReq.current) return;
-
         if (data?.ok) setWeather(data);
         else setWeather(null);
       } catch (e) {
@@ -67,19 +93,51 @@ export default function ActivityCard({
     return () => controller.abort();
   }, [c?.lat, c?.lon]);
 
-  const openWeatherMap = (e) => {
-    e?.preventDefault?.();
-    e?.stopPropagation?.();
+  // Strong event shielding against parent overlays / DnD handlers
+  // IMPORTANT: do NOT preventDefault for links; only stopPropagation.
+  const stopOnly = (e) => {
+    e.stopPropagation();
+  };
 
-    const lat = Number(c?.lat);
-    const lon = Number(c?.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+  // ✅ Zoom helper (popup if available, else new tab)
+  const zoomImage = (url) => {
+    if (!url) return;
 
-    // Open OpenWeather directly (no internal /weather-map route required)
-    const url = `https://openweathermap.org/weathermap?lat=${lat}&lon=${lon}&zoom=10`;
+    if (typeof setPopupImage === "function") {
+      setPopupImage(url);
+      return;
+    }
 
     window.open(url, "_blank", "noopener,noreferrer");
   };
+
+  // ✅ Compute Website/Map final href (official website first)
+  const website = ensureHttp(
+    act?.website || loc?.website || act?.link || loc?.link || ""
+  );
+
+  const mapsUrl = ensureHttp(
+    act?.mapsUrl || loc?.mapsUrl || act?.url || loc?.url || ""
+  );
+
+  const lat = c?.lat;
+  const lon = c?.lon;
+  const label = encodeURIComponent(act.title || loc?.name || "Location");
+
+  const fallbackMaps =
+    typeof lat === "number" && typeof lon === "number"
+      ? `https://www.google.com/maps?q=${lat},${lon}(${label})`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+          `${act.title || ""} ${loc?.name || ""} ${loc?.country || ""}`.trim()
+        )}`;
+
+  const websiteOrMapHref = website || mapsUrl || fallbackMaps;
+
+  // ✅ Weather URL (unchanged destination, just link-based)
+  const weatherHref =
+    typeof lat === "number" && typeof lon === "number"
+      ? `https://openweathermap.org/weathermap?lat=${lat}&lon=${lon}&zoom=10`
+      : "";
 
   return (
     <div
@@ -101,28 +159,57 @@ export default function ActivityCard({
           <b>{act.time || "Flexible"}</b> — {act.title}
         </div>
 
+        {/* Buttons under title (left) */}
         <div
           style={{
-            marginTop: 6,
+            marginTop: 8,
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
+            justifyContent: "flex-start",
             gap: 10,
           }}
         >
-          {/* Destination name line (no extra button below it) */}
-          <div>
-            📍 {flag(loc.country)} {loc.name}
-          </div>
-
-          {/* WEATHER BUTTON — restored working + colored */}
-          <button
-            type="button"
-            onPointerDown={(e) => {
-              // prevent drag/parent handlers from hijacking click
-              e.stopPropagation();
+          {/* ✅ WEBSITE / MAP as LINK (prevents popup-blocking) */}
+          <a
+            href={websiteOrMapHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            onPointerDownCapture={stopOnly}
+            onMouseDownCapture={stopOnly}
+            onClickCapture={stopOnly}
+            style={{
+              border: "none",
+              background: "linear-gradient(135deg,#ec4899,#db2777)",
+              color: "#fff",
+              padding: "6px 12px",
+              borderRadius: 999,
+              fontSize: 13,
+              fontWeight: 800,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              pointerEvents: "auto",
+              position: "relative",
+              zIndex: 50,
+              textDecoration: "none",
             }}
-            onClick={openWeatherMap}
+            title={website ? "Open official website" : "Open map"}
+          >
+            <GoogleMapPinIcon size={16} />
+            Website / Map
+          </a>
+
+          {/* ✅ WEATHER as LINK (same reason) */}
+          <a
+            href={weatherHref || "#"}
+            target="_blank"
+            rel="noopener noreferrer"
+            onPointerDownCapture={stopOnly}
+            onMouseDownCapture={stopOnly}
+            onClickCapture={stopOnly}
             style={{
               border: "none",
               background: weatherLoading
@@ -142,6 +229,11 @@ export default function ActivityCard({
               cursor: "pointer",
               whiteSpace: "nowrap",
               boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+              pointerEvents: "auto",
+              position: "relative",
+              zIndex: 50,
+              textDecoration: "none",
+              opacity: weatherHref ? 1 : 0.6,
             }}
             title="Open weather map"
           >
@@ -150,17 +242,16 @@ export default function ActivityCard({
               : weather?.temperatureC != null
               ? `${weather.temperatureC}°C • ${weather.condition}`
               : "Weather"}
-          </button>
+          </a>
         </div>
 
         {act.details && (
-          <div style={{ marginTop: 8, color: "#374151" }}>{act.details}</div>
+          <div style={{ marginTop: 12, color: "#374151" }}>{act.details}</div>
         )}
       </div>
 
       {/* RIGHT */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {/* PHOTO ONLY */}
         <div
           style={{
             width: "100%",
@@ -179,7 +270,12 @@ export default function ActivityCard({
             <img
               src={act.image}
               alt={act.title}
-              onClick={() => setPopupImage(act.image)}
+              onPointerDownCapture={stopOnly}
+              onMouseDownCapture={stopOnly}
+              onClickCapture={(e) => {
+                stopOnly(e);
+                zoomImage(act.image);
+              }}
               style={{
                 width: "100%",
                 height: "100%",
@@ -195,7 +291,6 @@ export default function ActivityCard({
           )}
         </div>
 
-        {/* LEAFLET MAP */}
         {c && (
           <div style={{ height: 160, borderRadius: 10, overflow: "hidden" }}>
             <LeafletMap
