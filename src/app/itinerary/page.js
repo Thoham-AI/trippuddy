@@ -429,96 +429,144 @@ export default function DestinationsPage() {
       }
 
       const json = await res.json();
-      let activities = [];
 
-      // 1) Preferred new array backend
-      if (Array.isArray(json.itinerary) && json.itinerary.length > 0) {
-        const apiActivities = json.itinerary[0].activities || [];
-        activities = apiActivities.map((a) => ({
-          time: a.time || "Flexible",
-          title: a.title || a.placeName || "Activity",
-          details: a.details || a.description || "",
-          cost_estimate:
-            a.cost_estimate ||
-            (a.approxCostAUD ? `Approx ${a.approxCostAUD} AUD` : ""),
-          coordinates:
-            a.coordinates ||
-            a.coords ||
-            (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null),
-          location: a.location || {},
-          image: a.image || null, // ✅ fixed
-          link: a.link || null,
-          weather: a.weather || null,
-          travelTime: a.travelTime ?? null,
-        }));
+// ---- helpers: map activities to your UI shape (keep existing fields) ----
+const mapModernActivity = (a) => ({
+  time: a.arrival_time || a.time_of_day || a.time || "Flexible",
+  arrival_time: a.arrival_time || null,
+  durationMinutes: a.duration_minutes || null,
+  departure_time: a.suggested_departure_time || null,
+  distanceFromPreviousKm: a.distance_km_from_previous ?? null,
+  travelTimeFromPreviousMinutes: a.travel_time_minutes_from_previous ?? null,
 
-        // 2) Modern backend: itinerary.days[]
-      } else if (Array.isArray(json.itinerary?.days)) {
-        const apiActivities = json.itinerary.days[0]?.activities || [];
+  title: a.title || "Activity",
+  details: a.description || "",
+  cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
 
-        activities = apiActivities.map((a) => ({
-          time: a.arrival_time || a.time_of_day || a.time || "Flexible",
-          arrival_time: a.arrival_time || null,
-          durationMinutes: a.duration_minutes || null,
-          departure_time: a.suggested_departure_time || null,
-          distanceFromPreviousKm: a.distance_km_from_previous ?? null,
-          travelTimeFromPreviousMinutes: a.travel_time_minutes_from_previous ?? null,
-          title: a.title || "Activity",
-          details: a.description || "",
-          cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
-          coordinates:
-            a.coordinates ||
-            (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null),
-          location: { name: a.title, country: "AU" },
-          image: a.image || null, // ✅ fixed
-          weather: json.weather || null,
-          weatherTemp: json.weather?.main?.temp ?? null,
-          weatherDesc: json.weather?.weather?.[0]?.description ?? null,
-          weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
-          weatherLink: json.weather?.id
-            ? `https://openweathermap.org/city/${json.weather.id}`
-            : null,
-          travelTime: null,
-        }));
+  coordinates:
+    a.coordinates ||
+    (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null),
 
-        // 3) Legacy shape: itinerary.itinerary.activities
-      } else if (json.itinerary?.itinerary?.activities) {
-        const apiActivities = json.itinerary.itinerary.activities;
-        activities = apiActivities.map((a) => ({
-          time: a.time || "Flexible",
-          title: a.title || "Activity",
-          details: a.description || "",
-          cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
-          coordinates:
-            a.coordinates ||
-            (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null),
-          location: { name: a.title, country: "AU" },
-          image: a.image || null, // ✅ fixed
-          weather: json.weather || null,
-          weatherTemp: json.weather?.main?.temp ?? null,
-          weatherDesc: json.weather?.weather?.[0]?.description ?? null,
-          weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
-          travelTime: null,
-        }));
+  location: { name: a.title, country: "AU" },
 
-        // 4) Fallback shape
-      } else {
-        const slots = json.itinerary?.slots || json.slots || [];
-        activities = slots.map((slot) => ({
-          time: slot.time || "Flexible",
-          title: slot.placeName || slot.title || "Activity",
-          details: slot.description || "",
-          cost_estimate: slot.approxCostAUD ? `Approx ${slot.approxCostAUD} AUD` : "",
-          coordinates: slot.coordinates || null,
-          location: slot.location || {},
-          image: slot.image || null, // ✅ fixed (no static map)
-          link: slot.link || null,
-          weather: slot.weather || null,
-          travelTime: null,
-        }));
-      }
+  image: a.image || null,
 
-      const newItinerary = [{ day: 1, activities }];
+  // ✅ IMPORTANT: carry link fields so Website/Map works reliably
+  website: a.website || null,
+  mapsUrl: a.mapsUrl || null,
+  link: a.website || a.mapsUrl || a.link || null,
+
+  weather: json.weather || null,
+  weatherTemp: json.weather?.main?.temp ?? null,
+  weatherDesc: json.weather?.weather?.[0]?.description ?? null,
+  weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
+  weatherLink: json.weather?.id
+    ? `https://openweathermap.org/city/${json.weather.id}`
+    : null,
+
+  travelTime: null,
+});
+
+const mapArrayBackendActivity = (a) => ({
+  time: a.time || "Flexible",
+  title: a.title || a.placeName || "Activity",
+  details: a.details || a.description || "",
+  cost_estimate:
+    a.cost_estimate ||
+    (a.approxCostAUD ? `Approx ${a.approxCostAUD} AUD` : ""),
+  coordinates:
+    a.coordinates ||
+    a.coords ||
+    (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null),
+  location: a.location || {},
+  image: a.image || null,
+
+  // ✅ carry link fields
+  website: a.website || null,
+  mapsUrl: a.mapsUrl || null,
+  link: a.website || a.mapsUrl || a.link || null,
+
+  weather: a.weather || null,
+  travelTime: a.travelTime ?? null,
+});
+
+// ---- build itinerary days correctly (THIS is the fix) ----
+let newItinerary = [];
+
+// 1) Backend returns an array of day objects: json.itinerary = [{day, activities}, ...]
+if (Array.isArray(json.itinerary) && json.itinerary.length > 0) {
+  const looksLikeDays = json.itinerary.some((d) => Array.isArray(d?.activities));
+
+  if (looksLikeDays) {
+    newItinerary = json.itinerary.map((d, idx) => ({
+      day: d.day ?? idx + 1,
+      activities: (d.activities || []).map(mapArrayBackendActivity),
+    }));
+  } else {
+    // If it’s truly a single-day array format, keep prior behaviour but still Day=1
+    const apiActivities = json.itinerary[0]?.activities || [];
+    newItinerary = [
+      { day: 1, activities: apiActivities.map(mapArrayBackendActivity) },
+    ];
+  }
+
+// 2) Modern backend: json.itinerary.days = [{day, activities}, ...]
+} else if (Array.isArray(json.itinerary?.days)) {
+  newItinerary = json.itinerary.days.map((d, idx) => ({
+    day: d.day ?? idx + 1,
+    activities: (d.activities || []).map(mapModernActivity),
+  }));
+
+// 3) Legacy shape: json.itinerary.itinerary.activities
+} else if (json.itinerary?.itinerary?.activities) {
+  const apiActivities = json.itinerary.itinerary.activities;
+  const activities = apiActivities.map((a) => ({
+    time: a.time || "Flexible",
+    title: a.title || "Activity",
+    details: a.description || "",
+    cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
+    coordinates:
+      a.coordinates ||
+      (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null),
+    location: { name: a.title, country: "AU" },
+    image: a.image || null,
+
+    // ✅ carry link fields
+    website: a.website || null,
+    mapsUrl: a.mapsUrl || null,
+    link: a.website || a.mapsUrl || a.link || null,
+
+    weather: json.weather || null,
+    weatherTemp: json.weather?.main?.temp ?? null,
+    weatherDesc: json.weather?.weather?.[0]?.description ?? null,
+    weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
+    travelTime: null,
+  }));
+  newItinerary = [{ day: 1, activities }];
+
+// 4) Fallback
+} else {
+  const slots = json.itinerary?.slots || json.slots || [];
+  const activities = slots.map((slot) => ({
+    time: slot.time || "Flexible",
+    title: slot.placeName || slot.title || "Activity",
+    details: slot.description || "",
+    cost_estimate: slot.approxCostAUD ? `Approx ${slot.approxCostAUD} AUD` : "",
+    coordinates: slot.coordinates || null,
+    location: slot.location || {},
+    image: slot.image || null,
+
+    // ✅ carry link fields
+    website: slot.website || null,
+    mapsUrl: slot.mapsUrl || null,
+    link: slot.website || slot.mapsUrl || slot.link || null,
+
+    weather: slot.weather || null,
+    travelTime: null,
+  }));
+  newItinerary = [{ day: 1, activities }];
+}
+
 
       // recompute travel times
       for (const day of newItinerary) {

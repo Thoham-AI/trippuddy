@@ -141,7 +141,26 @@ function extractDestinationHint(userPrompt) {
 }
 
 /* ---------------------------------------------------------------
-   SEASONAL CLOSURE EXAMPLE (Mindil) — keep your existing rule
+   REQUESTED DAYS (NEW, DETERMINISTIC)
+   Ensures we always return the same number of days the user asked for.
+---------------------------------------------------------------*/
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function extractRequestedDays(userPrompt) {
+  const s = String(userPrompt || "").toLowerCase();
+
+  // common patterns: "2 days", "2 day", "2-day", "for 2 days"
+  const m1 = s.match(/(?:^|\b)(\d{1,2})\s*[- ]*\s*day(?:s)?\b/);
+  if (m1?.[1]) return clamp(parseInt(m1[1], 10), 1, MAX_DAYS);
+
+  // if they say "weekend" etc, default to 1
+  return 1;
+}
+
+/* ---------------------------------------------------------------
+   SEASONAL CLOSURE EXAMPLE (Mindil)
 ---------------------------------------------------------------*/
 function isMindilLikelyClosedNow() {
   const m = new Date().getMonth() + 1; // 1..12
@@ -176,8 +195,173 @@ function addDaysToUTCDate(d, days) {
 }
 
 /* ---------------------------------------------------------------
-   GOOGLE PLACES: details for opening hours + website + mapsUrl
-   We must call Places Details with opening_hours + utc_offset_minutes
+   MEAL + EVENING ENFORCEMENT
+---------------------------------------------------------------*/
+const MEAL_WINDOWS = {
+  lunch: { start: 11 * 60 + 30, end: 13 * 60 }, // 11:30–13:00
+  dinner: { start: 18 * 60, end: 20 * 60 }, // 18:00–20:00
+};
+
+function titleHasAny(title, words) {
+  const t = String(title || "").toLowerCase();
+  return words.some((w) => t.includes(w));
+}
+
+function isLunch(a) {
+  return titleHasAny(a?.title, ["lunch"]);
+}
+
+function isDinner(a) {
+  return titleHasAny(a?.title, ["dinner"]);
+}
+
+function isNightLike(a) {
+  return titleHasAny(a?.title, [
+    "night",
+    "evening",
+    "sunset",
+    "night market",
+    "market",
+    "beer",
+    "bar",
+    "pub",
+    "show",
+    "puppet",
+  ]);
+}
+
+function ensureDuration(a, fallback) {
+  const d = Number(a?.duration_minutes);
+  if (!Number.isFinite(d) || d <= 0) a.duration_minutes = fallback;
+}
+
+function clamp2(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function dinnerTemplate(tripCity) {
+  const c = String(tripCity || "").toLowerCase();
+  if (c.includes("hanoi")) {
+    return {
+      title: "Dinner at Chả Cá Lã Vọng",
+      description:
+        "Enjoy Hanoi’s iconic turmeric fish with dill and noodles at a classic spot.",
+    };
+  }
+  return {
+    title: "Dinner at a local restaurant",
+    description: "Enjoy a relaxed dinner at a well-reviewed local restaurant.",
+  };
+}
+
+function nightTemplate(tripCity) {
+  const c = String(tripCity || "").toLowerCase();
+  if (c.includes("hanoi")) {
+    return {
+      title: "Evening walk + Water Puppet Show (Hoàn Kiếm area)",
+      description:
+        "A light evening activity: stroll around Hoàn Kiếm and catch a traditional water puppet performance.",
+    };
+  }
+  return {
+    title: "Evening activity (night market / scenic walk)",
+    description:
+      "A light evening activity to experience the city at night (market, riverside walk, or local show).",
+  };
+}
+
+function enforceMealsAndNight(days, tripCity) {
+  for (const day of days) {
+    if (!Array.isArray(day.activities) || day.activities.length === 0) continue;
+
+    for (const a of day.activities) {
+      if (!a.arrival_time && a.time) a.arrival_time = a.time;
+      if (!a.arrival_time) a.arrival_time = "09:00";
+      ensureDuration(a, 75);
+    }
+
+    // LUNCH
+    let lunchIdx = day.activities.findIndex(isLunch);
+    if (lunchIdx === -1) {
+      const lunch = {
+        title: "Lunch at a local spot",
+        arrival_time: "11:45",
+        duration_minutes: 60,
+        description: "Take a lunch break at a popular local eatery.",
+      };
+      const insertAt = Math.min(2, day.activities.length);
+      day.activities.splice(insertAt, 0, lunch);
+      lunchIdx = insertAt;
+    } else {
+      const lunch = day.activities[lunchIdx];
+      const t = parseHHMM(lunch.arrival_time);
+      if (t != null && t > MEAL_WINDOWS.lunch.end) {
+        const idxBefore = day.activities.findIndex((a) => {
+          const ta = parseHHMM(a.arrival_time);
+          return ta != null && ta > MEAL_WINDOWS.lunch.end;
+        });
+
+        const moved = day.activities.splice(lunchIdx, 1)[0];
+        moved.arrival_time = "11:45";
+
+        if (idxBefore === -1) {
+          const mid = Math.min(2, day.activities.length);
+          day.activities.splice(mid, 0, moved);
+        } else {
+          day.activities.splice(Math.max(0, idxBefore - 1), 0, moved);
+        }
+      }
+    }
+
+    // DINNER
+    if (!day.activities.some(isDinner)) {
+      const d = dinnerTemplate(tripCity);
+      day.activities.push({
+        ...d,
+        arrival_time: "18:30",
+        duration_minutes: 70,
+      });
+    }
+
+    // NIGHT
+    if (!day.activities.some(isNightLike)) {
+      const n = nightTemplate(tripCity);
+      day.activities.push({
+        ...n,
+        arrival_time: "20:00",
+        duration_minutes: 75,
+      });
+    }
+
+    // Monotonic schedule pass
+    let cursor = 8 * 60; // 08:00
+    for (let i = 0; i < day.activities.length; i++) {
+      const a = day.activities[i];
+      ensureDuration(a, 75);
+
+      const desired = parseHHMM(a.arrival_time);
+      let start = desired == null ? cursor : Math.max(desired, cursor);
+
+      if (isLunch(a)) {
+        start = clamp2(start, MEAL_WINDOWS.lunch.start, MEAL_WINDOWS.lunch.end);
+        start = Math.max(start, cursor);
+        if (cursor > MEAL_WINDOWS.lunch.end) start = cursor;
+      }
+
+      if (isDinner(a)) {
+        start = clamp2(start, MEAL_WINDOWS.dinner.start, MEAL_WINDOWS.dinner.end);
+        start = Math.max(start, cursor);
+        if (cursor > MEAL_WINDOWS.dinner.end) start = cursor;
+      }
+
+      a.arrival_time = fmtHHMM(start);
+      cursor = start + Number(a.duration_minutes) + 15;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------
+   GOOGLE PLACES DETAILS
 ---------------------------------------------------------------*/
 async function googlePlaceDetails(placeId, apiKey) {
   if (!placeId || !apiKey) return null;
@@ -208,8 +392,8 @@ async function googlePlaceDetails(placeId, apiKey) {
     address: r.formatted_address || null,
     lat: r.geometry?.location?.lat ?? null,
     lon: r.geometry?.location?.lng ?? null,
-    mapsUrl: r.url || null, // Google Maps place page
-    website: r.website || null, // official website (if present)
+    mapsUrl: r.url || null,
+    website: r.website || null,
     utcOffsetMinutes:
       typeof r.utc_offset_minutes === "number" ? r.utc_offset_minutes : null,
     openingPeriods: Array.isArray(r.opening_hours?.periods)
@@ -220,9 +404,7 @@ async function googlePlaceDetails(placeId, apiKey) {
 }
 
 /* ---------------------------------------------------------------
-   OPENING HOURS: build intervals for a weekday from Places periods
-   - periods use: { open:{day,time}, close:{day,time} }
-   - day: 0=Sun..6=Sat, time: "HHMM"
+   OPENING HOURS UTILITIES
 ---------------------------------------------------------------*/
 function hhmmToMinutes(hhmm) {
   if (!hhmm || typeof hhmm !== "string" || hhmm.length < 3) return null;
@@ -246,7 +428,6 @@ function buildIntervalsForWeekday(periods, weekday) {
     const start = hhmmToMinutes(o.time);
     if (start == null) continue;
 
-    // If close missing => open 24h or unknown; treat as open until end of day
     if (!c || typeof c.day !== "number" || !c.time) {
       intervals.push({ start, end: 24 * 60 });
       continue;
@@ -255,7 +436,6 @@ function buildIntervalsForWeekday(periods, weekday) {
     const endBase = hhmmToMinutes(c.time);
     if (endBase == null) continue;
 
-    // close can be same day or next day (overnight)
     let end = endBase;
     if (c.day !== weekday) {
       end = endBase + 24 * 60;
@@ -264,7 +444,6 @@ function buildIntervalsForWeekday(periods, weekday) {
     intervals.push({ start, end });
   }
 
-  // Sort by start time
   intervals.sort((a, b) => a.start - b.start);
   return intervals;
 }
@@ -279,27 +458,21 @@ function isWithinAnyInterval(mins, intervals) {
 function nextOpenMinute(mins, intervals) {
   for (const it of intervals) {
     if (mins <= it.start) return it.start;
-    if (mins >= it.start && mins < it.end) return mins; // already open
+    if (mins >= it.start && mins < it.end) return mins;
   }
-  // none after => return earliest start if any
   return intervals.length ? intervals[0].start : null;
 }
 
 /* ---------------------------------------------------------------
-   OPENING HOURS NORMALIZATION (NEW)
-   Enforces: arrival_time occurs during opening hours
-   Also enforces a non-decreasing schedule with buffers.
+   OPENING HOURS NORMALIZATION
 ---------------------------------------------------------------*/
 async function normalizeTimesToOpeningHours(days, tripCity) {
   const apiKey = getGoogleKey();
-  if (!apiKey) return; // can't validate without key
+  if (!apiKey) return;
 
-  // Determine local date baseline using first activity that has a placeId and utcOffsetMinutes
-  // If none, we fall back to UTC weekday.
   let baseUTC = new Date();
   let baseOffset = null;
 
-  // find one placeId for offset
   outer: for (const day of days) {
     for (const a of day.activities || []) {
       if (!a?.placeId) continue;
@@ -311,13 +484,11 @@ async function normalizeTimesToOpeningHours(days, tripCity) {
     }
   }
 
-  // helper to compute weekday for dayIndex in destination local time
   function weekdayForDayIndex(dayIndex) {
     const utc = addDaysToUTCDate(baseUTC, dayIndex);
     if (baseOffset == null) {
-      return utc.getUTCDay(); // 0..6
+      return utc.getUTCDay();
     }
-    // Convert UTC -> "local" by adding offset minutes, then getUTCDay of shifted time
     const shifted = new Date(utc.getTime() + baseOffset * 60 * 1000);
     return shifted.getUTCDay();
   }
@@ -326,13 +497,11 @@ async function normalizeTimesToOpeningHours(days, tripCity) {
     const day = days[di];
     if (!Array.isArray(day.activities)) continue;
 
-    // Step 1: ensure times exist and parseable
     for (const a of day.activities) {
       if (!a.arrival_time && a.time) a.arrival_time = a.time;
       if (!a.arrival_time) a.arrival_time = "09:00";
     }
 
-    // Step 2: opening-hours validation per activity
     const weekday = weekdayForDayIndex(di);
 
     for (const a of day.activities) {
@@ -341,21 +510,18 @@ async function normalizeTimesToOpeningHours(days, tripCity) {
       const details = await googlePlaceDetails(a.placeId, apiKey);
       if (!details) continue;
 
-      // hydrate basic fields robustly for UI:
       if (!a.latitude && Number.isFinite(Number(details.lat))) a.latitude = Number(details.lat);
       if (!a.longitude && Number.isFinite(Number(details.lon))) a.longitude = Number(details.lon);
       if (!a.coordinates && Number.isFinite(Number(a.latitude)) && Number.isFinite(Number(a.longitude))) {
         a.coordinates = { lat: Number(a.latitude), lon: Number(a.longitude) };
       }
 
-      // ✅ website reliability: official website else Maps URL (so button always works)
       if (!a.website) {
         if (details.website) a.website = details.website;
         else if (details.mapsUrl) a.website = details.mapsUrl;
       }
       if (!a.mapsUrl && details.mapsUrl) a.mapsUrl = details.mapsUrl;
 
-      // If we do not have opening data, skip (some places don't provide it)
       if (!details.openingPeriods) continue;
 
       const intervals = buildIntervalsForWeekday(details.openingPeriods, weekday);
@@ -368,7 +534,6 @@ async function normalizeTimesToOpeningHours(days, tripCity) {
         const adjusted = nextOpenMinute(desired, intervals);
         if (adjusted != null) {
           a.arrival_time = fmtHHMM(adjusted);
-          // (Optional note) keep it short and non-invasive
           if (a.description && !String(a.description).includes("Adjusted")) {
             a.description = `${a.description} (Adjusted to opening hours.)`;
           }
@@ -376,14 +541,10 @@ async function normalizeTimesToOpeningHours(days, tripCity) {
       }
     }
 
-    // Step 3: enforce monotonic times (avoid breakfast after museum, etc.)
-    // We respect durations if present, else 75 mins default + 15 mins buffer.
-    let cursor = 8 * 60; // earliest allowed 08:00
+    let cursor = 8 * 60;
     for (let i = 0; i < day.activities.length; i++) {
       const a = day.activities[i];
       const start = parseHHMM(a.arrival_time) ?? cursor;
-
-      // Push forward if earlier than cursor
       const fixedStart = Math.max(start, cursor);
       a.arrival_time = fmtHHMM(fixedStart);
 
@@ -397,8 +558,7 @@ async function normalizeTimesToOpeningHours(days, tripCity) {
 }
 
 /* ---------------------------------------------------------------
-   BREAKFAST NORMALIZATION (kept + stronger)
-   If requireBreakfast: ensure first activity is breakfast/coffee 08:00
+   BREAKFAST NORMALIZATION
 ---------------------------------------------------------------*/
 function enforceBreakfastFirst(days, requireBreakfast) {
   if (!requireBreakfast) return;
@@ -419,11 +579,9 @@ function enforceBreakfastFirst(days, requireBreakfast) {
 
     if (idx === -1) continue;
 
-    // Move breakfast to the top
     const breakfast = day.activities.splice(idx, 1)[0];
     breakfast.arrival_time = "08:00";
 
-    // Push old first later if it conflicts
     if (day.activities[0]) {
       const t0 = parseHHMM(day.activities[0].arrival_time);
       if (t0 != null && t0 < 9 * 60) {
@@ -436,7 +594,7 @@ function enforceBreakfastFirst(days, requireBreakfast) {
 }
 
 /* ---------------------------------------------------------------
-   GPT PROMPT (enhanced: opening hours + “realistic schedule”)
+   GPT PROMPTS
 ---------------------------------------------------------------*/
 function buildPrompt(prompt, destinationHint = "", requireBreakfast = false, userCity = "", tripCity = "") {
   return `
@@ -449,7 +607,11 @@ Rules:
 - Morning start (08:00–09:30)
 - Real places only
 ${tripCity ? `- Trip city: ${tripCity}.\n` : ``}${userCity ? `- User current city (from location): ${userCity}.\n` : ``}
-- Always include at least one food recommendation per day (breakfast/brunch/lunch/dinner), using real places.
+- Always include food in a realistic way:
+  - Include breakfast (or coffee), lunch, and dinner as appropriate for a full day.
+  - Lunch should be scheduled between 11:30–13:00.
+  - Dinner should be scheduled between 18:00–20:00.
+  - Include at least one evening/night activity (after dinner) for full-day itineraries.
 ${requireBreakfast ? `- Because the user is in the same city as the trip destination, the FIRST activity of EACH day MUST be a breakfast/brunch/coffee place suitable for 08:00–09:30.\n` : ``}
 - Respect typical opening hours and common sense timing:
   - Breakfast: 08:00–10:00
@@ -480,6 +642,105 @@ Return STRICT JSON:
 USER INPUT:
 "${prompt}"
 `;
+}
+
+function buildMissingDaysPrompt(originalPrompt, tripCity, startDayNumber, endDayNumber) {
+  return `
+You are TripPuddy, an expert travel planner.
+
+The user asked for a multi-day itinerary, but Day 1 was already generated.
+Now generate ONLY the missing days.
+
+Trip city: ${tripCity || "the destination city"}
+
+Generate days ${startDayNumber} through ${endDayNumber} ONLY.
+Do NOT include Day 1.
+
+Rules:
+- 4–6 activities per day
+- Morning start (08:00–09:30)
+- Real places only (within the trip city)
+- Include food properly per day:
+  - Lunch between 11:30–13:00
+  - Dinner between 18:00–20:00
+  - Include at least one evening/night activity after dinner
+
+Return STRICT JSON:
+
+{
+  "days": [
+    {
+      "day": ${startDayNumber},
+      "activities": [
+        { "title": "", "arrival_time": "", "duration_minutes": 90, "description": "" }
+      ]
+    }
+  ]
+}
+
+ORIGINAL USER INPUT:
+"${originalPrompt}"
+`;
+}
+
+/* ---------------------------------------------------------------
+   ENSURE EXACT DAY COUNT (NEW)
+---------------------------------------------------------------*/
+async function generateMissingDaysIfNeeded({
+  client,
+  userPrompt,
+  destinationHint,
+  requireBreakfast,
+  userCity,
+  tripCity,
+  days,
+  requestedDays,
+}) {
+  const current = Array.isArray(days) ? days : [];
+  if (requestedDays <= current.length) return current.slice(0, requestedDays);
+
+  // Generate only the missing days
+  const startDayNumber = current.length + 1;
+  const endDayNumber = requestedDays;
+
+  const completion = await client.chat.completions.create({
+    model: OPENAI_MODEL,
+    messages: [
+      { role: "system", content: "Return JSON only." },
+      {
+        role: "user",
+        content: buildMissingDaysPrompt(userPrompt, tripCity || destinationHint, startDayNumber, endDayNumber),
+      },
+    ],
+    temperature: 0.6,
+    max_tokens: OPENAI_MAX_TOKENS,
+  });
+
+  let raw = completion.choices?.[0]?.message?.content || "{}";
+  raw = raw.replace(/```json|```/g, "").trim();
+
+  let more = { days: [] };
+  try {
+    more = JSON.parse(raw);
+  } catch {
+    more = { days: [] };
+  }
+
+  const extraDays = Array.isArray(more.days) ? more.days : [];
+  const merged = [...current];
+
+  // Merge only new day numbers; avoid duplicates
+  for (const d of extraDays) {
+    const n = Number(d?.day);
+    if (!Number.isFinite(n)) continue;
+    if (n < 1 || n > requestedDays) continue;
+    if (merged.some((x) => Number(x?.day) === n)) continue;
+    merged.push(d);
+  }
+
+  // Ensure order Day 1..N
+  merged.sort((a, b) => Number(a?.day) - Number(b?.day));
+  return merged.slice(0, requestedDays);
 }
 
 /* ---------------------------------------------------------------
@@ -538,8 +799,12 @@ export async function handleItineraryRequest(input) {
     // Only force breakfast-first if user already in the same city
     const requireBreakfast = cityMatches(userCity, tripCity);
 
+    // ✅ Deterministic requested days
+    const requestedDays = extractRequestedDays(userPrompt);
+
     const client = await getOpenAI();
 
+    // First attempt: generate full itinerary
     const completion = await client.chat.completions.create({
       model: OPENAI_MODEL,
       messages: [
@@ -563,9 +828,19 @@ export async function handleItineraryRequest(input) {
       itinerary = { days: [] };
     }
 
-    const days = Array.isArray(itinerary.days)
-      ? itinerary.days.slice(0, MAX_DAYS)
-      : [];
+    let days = Array.isArray(itinerary.days) ? itinerary.days.slice(0, MAX_DAYS) : [];
+
+    // ✅ If model returned fewer days than requested, generate missing days only
+    days = await generateMissingDaysIfNeeded({
+      client,
+      userPrompt,
+      destinationHint,
+      requireBreakfast,
+      userCity,
+      tripCity,
+      days,
+      requestedDays,
+    });
 
     /* -------------------- POST-PROCESS SANITY (kept) -------------------- */
     const promptHasDates =
@@ -611,7 +886,6 @@ export async function handleItineraryRequest(input) {
           day.activities.map(async (a) => {
             if (!a?.title) return;
 
-            // Hydrate image/place using /api/images (keeps your existing pipeline)
             const resolved = await resolveImage(a, tripCity || destinationHint);
             if (!a.image && resolved?.url) a.image = resolved.url;
 
@@ -621,12 +895,9 @@ export async function handleItineraryRequest(input) {
               if (!a.latitude && Number.isFinite(Number(p.lat))) a.latitude = Number(p.lat);
               if (!a.longitude && Number.isFinite(Number(p.lon))) a.longitude = Number(p.lon);
 
-              // Always store both:
               if (!a.mapsUrl && p.mapsUrl) a.mapsUrl = p.mapsUrl;
               if (!a.mapsUrl && p.url) a.mapsUrl = p.url;
 
-              // ✅ website button reliability:
-              // official website if present else fall back to maps place url
               if (!a.website) {
                 if (p.website) a.website = p.website;
                 else if (p.mapsUrl) a.website = p.mapsUrl;
@@ -649,9 +920,11 @@ export async function handleItineraryRequest(input) {
       })
     );
 
-    /* -------------------- 3) OPENING HOURS ENFORCEMENT (NEW) -------------------- */
-    // This adjusts arrival_time based on REAL opening hours from Google Places Details.
+    /* -------------------- 3) OPENING HOURS ENFORCEMENT (kept) -------------------- */
     await normalizeTimesToOpeningHours(days, tripCity);
+
+    /* -------------------- 4) MEALS + NIGHT ENFORCEMENT (kept) -------------------- */
+    enforceMealsAndNight(days, tripCity);
 
     return {
       ok: true,
