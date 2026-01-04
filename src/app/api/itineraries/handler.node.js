@@ -387,14 +387,166 @@ async function normalizeTimesToOpeningHours(days, tripCity) {
       const fixedStart = Math.max(start, cursor);
       a.arrival_time = fmtHHMM(fixedStart);
 
-      const dur = Number.isFinite(Number(a.duration_minutesutes))
-        ? Number(a.duration_minutesutes)
-        : 75;
+      const durVal = Number(a.duration_minutes ?? a.duration_minutesutes);
+      const dur = Number.isFinite(durVal) && durVal > 0 ? durVal : 75;
 
       cursor = fixedStart + dur + 15;
     }
   }
 }
+
+
+/* ---------------------------------------------------------------
+   MEAL + NIGHT ENFORCEMENT (NEW)
+   Goals:
+   - Lunch should not be late (target ~12:30; keep within 11:30–13:30)
+   - Ensure dinner exists (target ~18:30)
+   - Ensure an evening / night activity exists (target ~20:30)
+   - Keep schedule in chronological order with simple buffers
+---------------------------------------------------------------*/
+function enforceMealsAndNight(days, tripCity = "") {
+  if (!Array.isArray(days)) return;
+
+  function norm(s) {
+    return (s || "").toString().toLowerCase();
+  }
+
+  function looksLikeLunch(t) {
+    t = norm(t);
+    return t.includes("lunch") || (t.includes("restaurant") && !t.includes("breakfast") && !t.includes("dinner"));
+  }
+
+  function looksLikeDinner(t) {
+    t = norm(t);
+    return t.includes("dinner") || t.includes("seafood") || t.includes("bbq") || (t.includes("restaurant") && !t.includes("breakfast") && !t.includes("lunch"));
+  }
+
+  function looksLikeEvening(t) {
+    t = norm(t);
+    return (
+      t.includes("night") ||
+      t.includes("evening") ||
+      t.includes("sunset") ||
+      t.includes("bar") ||
+      t.includes("pub") ||
+      t.includes("market") ||
+      t.includes("show") ||
+      t.includes("walk")
+    );
+  }
+
+  function addInjected(day, activity) {
+    activity.__injected = true; // internal marker for trimming preference
+    day.activities.push(activity);
+  }
+
+  for (const day of days) {
+    if (!Array.isArray(day.activities)) day.activities = [];
+
+    // Ensure arrival_time exists
+    for (const a of day.activities) {
+      if (!a) continue;
+      if (!a.arrival_time && a.time) a.arrival_time = a.time;
+      if (!a.arrival_time) a.arrival_time = "09:00";
+    }
+
+    // Lunch: adjust if too late, or inject if missing
+    const lunchIdx = day.activities.findIndex((a) => looksLikeLunch(a?.title));
+    if (lunchIdx >= 0) {
+      const mins = parseHHMM(day.activities[lunchIdx].arrival_time);
+      if (mins != null && mins > 14 * 60) {
+        day.activities[lunchIdx].arrival_time = "12:30";
+      }
+    } else {
+      addInjected(day, {
+        title: tripCity ? `Lunch in ${tripCity}` : "Lunch at a local restaurant",
+        arrival_time: "12:30",
+        duration_minutesutes: 60,
+        description: "Enjoy a local lunch at a well-rated nearby restaurant.",
+        image: null,
+        placeId: null,
+        latitude: null,
+        longitude: null,
+        coordinates: null,
+        website: null,
+        mapsUrl: null,
+      });
+    }
+
+    // Dinner: inject if missing
+    const dinnerIdx = day.activities.findIndex((a) => looksLikeDinner(a?.title));
+    if (dinnerIdx === -1) {
+      addInjected(day, {
+        title: tripCity ? `Dinner in ${tripCity}` : "Dinner at a local restaurant",
+        arrival_time: "18:30",
+        duration_minutesutes: 75,
+        description: "Have dinner at a popular local spot to end the day well.",
+        image: null,
+        placeId: null,
+        latitude: null,
+        longitude: null,
+        coordinates: null,
+        website: null,
+        mapsUrl: null,
+      });
+    }
+
+    // Night activity: inject if missing
+    const eveningIdx = day.activities.findIndex((a) => looksLikeEvening(a?.title));
+    if (eveningIdx === -1) {
+      addInjected(day, {
+        title: "Evening stroll / night activity",
+        arrival_time: "20:30",
+        duration_minutesutes: 90,
+        description: "Relax with an easy evening activity (night market, riverside walk, or a casual show).",
+        image: null,
+        placeId: null,
+        latitude: null,
+        longitude: null,
+        coordinates: null,
+        website: null,
+        mapsUrl: null,
+      });
+    }
+
+    // Sort by time, then enforce monotonic schedule with buffers
+    day.activities.sort((a, b) => {
+      const A = parseHHMM(a?.arrival_time) ?? 99999;
+      const B = parseHHMM(b?.arrival_time) ?? 99999;
+      return A - B;
+    });
+
+    let cursor = 8 * 60; // earliest
+    for (const a of day.activities) {
+      const start = parseHHMM(a?.arrival_time) ?? cursor;
+      const fixedStart = Math.max(start, cursor);
+      a.arrival_time = fmtHHMM(fixedStart);
+
+      const durVal = Number(a?.duration_minutes ?? a?.duration_minutesutes);
+      const dur = Number.isFinite(durVal) && durVal > 0 ? durVal : 75;
+      cursor = fixedStart + dur + 15;
+    }
+
+    // If we exceed the cap, trim last non-injected items first (to preserve meals)
+    if (day.activities.length > MAX_ACTIVITIES_PER_DAY) {
+      const trimmed = day.activities.slice();
+      while (trimmed.length > MAX_ACTIVITIES_PER_DAY) {
+        const idx = trimmed.map((x) => !!x?.__injected).lastIndexOf(false);
+        if (idx >= 0) trimmed.splice(idx, 1);
+        else trimmed.pop();
+      }
+      for (const a of trimmed) {
+        if (a && a.__injected) delete a.__injected;
+      }
+      day.activities = trimmed;
+    } else {
+      for (const a of day.activities) {
+        if (a && a.__injected) delete a.__injected;
+      }
+    }
+  }
+}
+
 
 /* ---------------------------------------------------------------
    BREAKFAST NORMALIZATION (kept + stronger)
