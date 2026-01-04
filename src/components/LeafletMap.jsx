@@ -11,7 +11,7 @@ import {
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 
 // Fix default marker icons (no “Mark” text)
@@ -29,11 +29,34 @@ L.Icon.Default.mergeOptions({
 /* ---------------- FitToBounds helper ---------------- */
 function FitToBounds({ bounds }) {
   const map = useMap();
+  const lastKeyRef = useRef("");
+
   useEffect(() => {
-    if (bounds && bounds.length > 1) {
-      map.fitBounds(bounds, { padding: [30, 30] });
-    }
+    if (!bounds || bounds.length <= 1) return;
+
+    // ✅ Deduplicate bounds to prevent “zoom snaps back” on re-render
+    const key = bounds
+      .map((b) => {
+        // bounds can be [lat, lon] arrays or LatLng-like objects
+        if (Array.isArray(b)) return `${b[0].toFixed?.(6) ?? b[0]},${b[1].toFixed?.(6) ?? b[1]}`;
+        const lat = b?.lat ?? b?.[0];
+        const lon = b?.lng ?? b?.lon ?? b?.[1];
+        return `${Number(lat).toFixed(6)},${Number(lon).toFixed(6)}`;
+      })
+      .join("|");
+
+    if (key && key === lastKeyRef.current) return;
+    lastKeyRef.current = key;
+
+    map.fitBounds(bounds, {
+      padding: [30, 30],
+      // ✅ Keep the fit from forcing an overly-close zoom,
+      // but still allow users to zoom in manually afterward.
+      maxZoom: 17,
+      animate: true,
+    });
   }, [bounds, map]);
+
   return null;
 }
 
@@ -140,6 +163,7 @@ export default function LeafletMap({
       onPointerDownCapture={(e) => e.stopPropagation()}
       onMouseDownCapture={(e) => e.stopPropagation()}
       onTouchStartCapture={(e) => e.stopPropagation()}
+      onWheelCapture={(e) => e.stopPropagation()}
       style={{
         width: "100%",
         height: "100%",
@@ -151,8 +175,15 @@ export default function LeafletMap({
       <MapContainer
         center={[lat, lon]}
         zoom={15}
+        minZoom={2}
+        maxZoom={19}              // ✅ allow zoom-in
         scrollWheelZoom={true}
         zoomControl={true}
+        dragging={true}
+        touchZoom={true}
+        doubleClickZoom={true}
+        boxZoom={true}
+        keyboard={true}
         style={{
           height: "100%",
           width: "100%",
@@ -162,7 +193,10 @@ export default function LeafletMap({
         }}
         attributionControl={false}
       >
-        <TileLayer url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png" />
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png"
+          maxZoom={19}            // ✅ match container maxZoom
+        />
 
         {/* Main POI marker */}
         <Marker position={[lat, lon]}>
@@ -216,7 +250,10 @@ export default function LeafletMap({
 
         {/* Animated emoji following path */}
         {animatedPath.length > 1 && (
-          <AnimatedEmoji path={animatedPath} mode={animMode === "walk" ? "walk" : "drive"} />
+          <AnimatedEmoji
+            path={animatedPath}
+            mode={animMode === "walk" ? "walk" : "drive"}
+          />
         )}
       </MapContainer>
     </div>

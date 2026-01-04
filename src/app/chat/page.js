@@ -13,7 +13,7 @@ export default function ChatPage() {
 
       {/* HERO BANNER */}
       <section
-        className="relative h-[70vh] w-full flex flex-col items-center justify-center text-center"
+        className="relative h-[30vh] w-full flex flex-col items-center justify-center text-center"
         style={{
           backgroundImage: "url('/banner.jpg')",
           backgroundSize: "cover",

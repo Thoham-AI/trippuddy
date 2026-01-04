@@ -17,6 +17,15 @@ function getClient() {
   return client;
 }
 
+function sanitizeLang(code) {
+  const c = String(code || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z]/g, "")
+    .slice(0, 2);
+  return /^[a-z]{2}$/.test(c) ? c : "en";
+}
+
 async function detectLanguage(text) {
   try {
     const openai = getClient();
@@ -27,25 +36,31 @@ async function detectLanguage(text) {
         {
           role: "system",
           content:
-            "Detect the language of the following text. Respond ONLY with a two-letter ISO language code. No explanation.",
+            "Detect the language of the following text. Respond ONLY with a two-letter ISO language code (e.g., en, vi, ja). No explanation.",
         },
-        { role: "user", content: text },
+        { role: "user", content: text || "" },
       ],
       max_tokens: 5,
+      temperature: 0,
     });
 
-    return (
-      detection.choices[0]?.message?.content?.trim()?.toLowerCase() || "en"
-    );
+    const raw = detection.choices[0]?.message?.content?.trim() || "en";
+    return sanitizeLang(raw);
   } catch {
     return "en";
   }
 }
 
-function systemPrompt(lang) {
+function systemPrompt(lang, userTitle) {
+  const title = String(userTitle || "Boss").trim() || "Boss";
   return `
 You are TripPuddy — a multilingual travel assistant.
-Always respond in ${lang}. Be concise, friendly, and helpful about travel.
+
+Rules:
+- Always respond in ${lang}.
+- Address the user as "${title}" naturally in your reply (e.g., "Hi ${title}, ...", "Sure thing, ${title}.").
+- Be concise, friendly, and helpful about travel.
+- If the user uses multiple languages, respond in the dominant one (${lang}).
 `;
 }
 
@@ -55,6 +70,9 @@ export async function POST(req) {
     const messages = body.messages ?? [];
     const lastMessage = messages[messages.length - 1]?.content || "";
 
+    // ✅ NEW: caller preference (Boss/Honey/etc)
+    const userTitle = body.userTitle ?? body.title ?? "Boss";
+
     const lang = await detectLanguage(lastMessage);
 
     const openai = getClient();
@@ -62,7 +80,7 @@ export async function POST(req) {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: systemPrompt(lang) },
+        { role: "system", content: systemPrompt(lang, userTitle) },
         ...messages,
       ],
       max_tokens: 500,
@@ -71,7 +89,8 @@ export async function POST(req) {
 
     const reply = completion.choices[0]?.message?.content || "";
 
-    return NextResponse.json({ reply });
+    // ✅ NEW: include language (non-breaking for existing clients)
+    return NextResponse.json({ reply, language: lang });
   } catch (err) {
     console.error("CHAT ROUTE ERROR:", err);
     return NextResponse.json(
