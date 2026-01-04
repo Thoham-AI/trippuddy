@@ -78,6 +78,32 @@ const minutesToStr = (mins, mode) =>
 const fallbackMinutes = (dKm, mode) =>
   mode === "walk" ? (dKm / 4) * 60 : (dKm / 30) * 60 + 3;
 
+/* ----------------------- time sorting (NEW) ----------------------- */
+
+function timeToMinutes(t) {
+  if (!t) return Number.POSITIVE_INFINITY;
+  const m = String(t).match(/(\d{1,2}):(\d{2})/);
+  if (!m) return Number.POSITIVE_INFINITY;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return Number.POSITIVE_INFINITY;
+  return hh * 60 + mm;
+}
+
+function sortActivitiesByTime(activities) {
+  if (!Array.isArray(activities)) return [];
+  // stable sort so equal times keep their original order
+  return activities
+    .map((a, idx) => ({ a, idx }))
+    .sort((x, y) => {
+      const tx = timeToMinutes(x.a?.time || x.a?.arrival_time);
+      const ty = timeToMinutes(y.a?.time || y.a?.arrival_time);
+      if (tx !== ty) return tx - ty;
+      return x.idx - y.idx;
+    })
+    .map((x) => x.a);
+}
+
 /* ----------------------- routing via ORS with safe fallbacks ----------------------- */
 
 async function fetchRoute(prev, next) {
@@ -306,7 +332,9 @@ function mixedOptimizeActivities(activities) {
   });
 
   const order = [0];
-  const pool = Array.from({ length: orderedInClusters.length }, (_, i) => i).slice(1);
+  const pool = Array.from({ length: orderedInClusters.length }, (_, i) => i).slice(
+    1
+  );
   while (pool.length) {
     const last = order[order.length - 1];
     let bestIdx = 0;
@@ -422,149 +450,201 @@ export default function DestinationsPage() {
 
       const json = await res.json();
 
-      let activities = [];
+      // ---- helpers: map API activities to UI shape (keep existing fields) ----
+      const weatherMapLinkForCoords = (coords) => {
+        const la = coords?.lat;
+        const lo = coords?.lon;
+        if (typeof la !== "number" || typeof lo !== "number") return null;
+        // ✅ Zoomable OpenWeatherMap layer URL
+        return `https://openweathermap.org/weathermap?basemap=map&layers=temperature&lat=${la}&lon=${lo}&zoom=12`;
+      };
 
-      // Preferred new array backend
-      if (Array.isArray(json.itinerary) && json.itinerary.length > 0) {
-        const apiActivities = json.itinerary[0].activities || [];
+      const mapArrayBackendActivity = (a) => {
+        const coords =
+          a.coordinates ||
+          a.coords ||
+          (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null);
 
-        activities = apiActivities.map((a) => ({
-          time: a.time || "Flexible",
+        return {
+          time: a.time || a.arrival_time || "Flexible",
+
+          arrival_time: a.arrival_time || null,
+          durationMinutes: a.duration_minutes || null,
+          departure_time: a.suggested_departure_time || null,
+          distanceFromPreviousKm: a.distance_km_from_previous ?? null,
+          travelTimeFromPreviousMinutes: a.travel_time_minutes_from_previous ?? null,
+
           title: a.title || a.placeName || "Activity",
           details: a.details || a.description || "",
           cost_estimate:
             a.cost_estimate ||
             (a.approxCostAUD ? `Approx ${a.approxCostAUD} AUD` : ""),
-          coordinates:
-            a.coordinates ||
-            a.coords ||
-            (a.latitude && a.longitude
-              ? { lat: a.latitude, lon: a.longitude }
-              : null),
-          location: a.location || {},
+
+          coordinates: coords,
+          location: a.location || { name: a.title, country: "AU" },
+
           // Use backend photo if provided, otherwise fallback to static map when we have lat/lon
           image:
             a.image ||
-            (a.latitude && a.longitude
-              ? `https://maps.googleapis.com/maps/api/staticmap?center=${a.latitude},${a.longitude}&zoom=15&size=600x400&markers=color:red%7C${a.latitude},${a.longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
+            (coords?.lat && coords?.lon
+              ? `https://maps.googleapis.com/maps/api/staticmap?center=${coords.lat},${coords.lon}&zoom=15&size=600x400&markers=color:red%7C${coords.lat},${coords.lon}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
               : null),
-          link: a.link || null,
-          weather: a.weather || null,
+
+          // ✅ Prefer website/mapsUrl when present; keep link as fallback
+          website: a.website || null,
+          mapsUrl: a.mapsUrl || null,
+          link: a.website || a.mapsUrl || a.link || null,
+
+          weather: a.weather || json.weather || null,
+          weatherTemp: json.weather?.main?.temp ?? null,
+          weatherDesc: json.weather?.weather?.[0]?.description ?? null,
+          weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
+
+          // ✅ Zoomable weather map link
+          weatherLink: weatherMapLinkForCoords(coords),
+
           travelTime: a.travelTime ?? null,
-        }));
+        };
+      };
 
-      // Modern backend shape: itinerary.days[] from /api/itineraries
-      } else if (Array.isArray(json.itinerary?.days)) {
-        const apiActivities = json.itinerary.days[0]?.activities || [];
+      const mapModernActivity = (a) => {
+        const coords =
+          a.coordinates ||
+          (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null);
 
-        activities = apiActivities.map((a) => ({
-          // main label that shows in the card title
-          time:
-            a.arrival_time ||
-            a.time_of_day ||
-            a.time ||
-            "Flexible",
+        return {
+          time: a.arrival_time || a.time_of_day || a.time || "Flexible",
 
-          // new time-specific fields
           arrival_time: a.arrival_time || null,
           durationMinutes: a.duration_minutes || null,
           departure_time: a.suggested_departure_time || null,
           distanceFromPreviousKm: a.distance_km_from_previous ?? null,
-          travelTimeFromPreviousMinutes:
-            a.travel_time_minutes_from_previous ?? null,
+          travelTimeFromPreviousMinutes: a.travel_time_minutes_from_previous ?? null,
 
-          title: a.title || "Activity",
-          details: a.description || "",
-          cost_estimate: a.estimated_cost
-            ? `Approx ${a.estimated_cost} AUD`
-            : "",
-
-          coordinates:
-            a.coordinates ||
-            (a.latitude && a.longitude
-              ? { lat: a.latitude, lon: a.longitude }
-              : null),
-
-          location: { name: a.title, country: "AU" },
-
-          image:
-            a.image ||
-            (a.latitude && a.longitude
-              ? `https://maps.googleapis.com/maps/api/staticmap?center=${a.latitude},${a.longitude}&zoom=15&size=600x400&markers=color:red%7C${a.latitude},${a.longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
-              : null),
-
-          // normalized weather from top-level json.weather
-          weather: json.weather || null,
-          weatherTemp: json.weather?.main?.temp ?? null,
-          weatherDesc: json.weather?.weather?.[0]?.description ?? null,
-          weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
-          weatherLink: json.weather?.id
-            ? `https://openweathermap.org/city/${json.weather.id}`
-            : null,
-
-          travelTime: null,
-        }));
-
-      // Legacy backend shape: json.itinerary.itinerary.activities
-      } else if (json.itinerary?.itinerary?.activities) {
-        const apiActivities = json.itinerary.itinerary.activities;
-
-        activities = apiActivities.map((a) => ({
-          time: a.time || "Flexible",
           title: a.title || "Activity",
           details: a.description || "",
           cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
-          coordinates:
-            a.coordinates ||
-            (a.latitude && a.longitude
-              ? { lat: a.latitude, lon: a.longitude }
-              : null),
+
+          coordinates: coords,
           location: { name: a.title, country: "AU" },
+
           image:
             a.image ||
-            (a.latitude && a.longitude
-              ? `https://maps.googleapis.com/maps/api/staticmap?center=${a.latitude},${a.longitude}&zoom=15&size=600x400&markers=color:red%7C${a.latitude},${a.longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
+            (coords?.lat && coords?.lon
+              ? `https://maps.googleapis.com/maps/api/staticmap?center=${coords.lat},${coords.lon}&zoom=15&size=600x400&markers=color:red%7C${coords.lat},${coords.lon}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
               : null),
-          // normalized weather from top-level json.weather
+
+          website: a.website || null,
+          mapsUrl: a.mapsUrl || null,
+          link: a.website || a.mapsUrl || a.link || null,
+
           weather: json.weather || null,
           weatherTemp: json.weather?.main?.temp ?? null,
           weatherDesc: json.weather?.weather?.[0]?.description ?? null,
           weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
+
+          // ✅ Zoomable weather map link
+          weatherLink: weatherMapLinkForCoords(coords),
+
           travelTime: null,
+        };
+      };
+
+      // ---- build itinerary days correctly (MULTI-DAY SAFE) ----
+      let newItinerary = [];
+
+      // 1) Backend returns an array of day objects: json.itinerary = [{day, activities}, ...]
+      if (Array.isArray(json.itinerary) && json.itinerary.length > 0) {
+        const looksLikeDays = json.itinerary.some((d) => Array.isArray(d?.activities));
+
+        if (looksLikeDays) {
+          newItinerary = json.itinerary.map((d, idx) => ({
+            day: d.day ?? idx + 1,
+            activities: (d.activities || []).map(mapArrayBackendActivity),
+          }));
+        } else {
+          const apiActivities = json.itinerary[0]?.activities || [];
+          newItinerary = [
+            { day: 1, activities: apiActivities.map(mapArrayBackendActivity) },
+          ];
+        }
+
+      // 2) Modern backend shape: itinerary.days[]
+      } else if (Array.isArray(json.itinerary?.days)) {
+        newItinerary = json.itinerary.days.map((d, idx) => ({
+          day: d.day ?? idx + 1,
+          activities: (d.activities || []).map(mapModernActivity),
         }));
 
-      // FALLBACK SHAPE
+      // 3) Legacy backend shape: json.itinerary.itinerary.activities
+      } else if (json.itinerary?.itinerary?.activities) {
+        const apiActivities = json.itinerary.itinerary.activities;
+        const activities = apiActivities.map((a) => {
+          const coords =
+            a.coordinates ||
+            (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null);
+
+          return {
+            time: a.time || "Flexible",
+            title: a.title || "Activity",
+            details: a.description || "",
+            cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
+            coordinates: coords,
+            location: { name: a.title, country: "AU" },
+            image:
+              a.image ||
+              (coords?.lat && coords?.lon
+                ? `https://maps.googleapis.com/maps/api/staticmap?center=${coords.lat},${coords.lon}&zoom=15&size=600x400&markers=color:red%7C${coords.lat},${coords.lon}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
+                : null),
+            website: a.website || null,
+            mapsUrl: a.mapsUrl || null,
+            link: a.website || a.mapsUrl || a.link || null,
+
+            weather: json.weather || null,
+            weatherTemp: json.weather?.main?.temp ?? null,
+            weatherDesc: json.weather?.weather?.[0]?.description ?? null,
+            weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
+            weatherLink: weatherMapLinkForCoords(coords),
+
+            travelTime: null,
+          };
+        });
+        newItinerary = [{ day: 1, activities }];
+
+      // 4) Fallback shape
       } else {
         const slots = json.itinerary?.slots || json.slots || [];
-
-        activities = slots.map((slot) => ({
-          time: slot.time || "Flexible",
-          title: slot.placeName || slot.title || "Activity",
-          details: slot.description || "",
-          cost_estimate: slot.approxCostAUD
-            ? `Approx ${slot.approxCostAUD} AUD`
-            : "",
-          coordinates: slot.coordinates || null,
-          location: slot.location || {},
-          image:
-            slot.image ||
-            (slot.coordinates?.lat && slot.coordinates?.lon
-              ? `https://maps.googleapis.com/maps/api/staticmap?center=${slot.coordinates.lat},${slot.coordinates.lon}&zoom=15&size=600x400&markers=color:red%7C${slot.coordinates.lat},${slot.coordinates.lon}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
-              : null),
-          link: slot.link || null,
-          weather: slot.weather || null,
-          travelTime: null,
-        }));
+        const activities = slots.map((slot) => {
+          const coords = slot.coordinates || null;
+          return {
+            time: slot.time || "Flexible",
+            title: slot.placeName || slot.title || "Activity",
+            details: slot.description || "",
+            cost_estimate: slot.approxCostAUD ? `Approx ${slot.approxCostAUD} AUD` : "",
+            coordinates: coords,
+            location: slot.location || {},
+            image:
+              slot.image ||
+              (coords?.lat && coords?.lon
+                ? `https://maps.googleapis.com/maps/api/staticmap?center=${coords.lat},${coords.lon}&zoom=15&size=600x400&markers=color:red%7C${coords.lat},${coords.lon}&key=${process.env.NEXT_PUBLIC_GOOGLE_STATIC_KEY}`
+                : null),
+            website: slot.website || null,
+            mapsUrl: slot.mapsUrl || null,
+            link: slot.website || slot.mapsUrl || slot.link || null,
+            weather: slot.weather || null,
+            weatherLink: weatherMapLinkForCoords(coords),
+            travelTime: null,
+          };
+        });
+        newItinerary = [{ day: 1, activities }];
       }
 
-      const newItinerary = [
-        {
-          day: 1,
-          activities,
-        },
-      ];
+      // ✅ Fix display order: sort by time once at generation time
+      for (const day of newItinerary) {
+        day.activities = sortActivitiesByTime(day.activities);
+      }
 
-      // recompute travel times between stops
+      // recompute travel times between stops (kept)
       for (const day of newItinerary) {
         const acts = day.activities || [];
         const tasks = acts.map(async (a, i) => {
@@ -584,7 +664,7 @@ export default function DestinationsPage() {
         await Promise.all(tasks);
       }
 
-      setData({ itinerary: newItinerary });
+      setData({ itinerary: newItinerary, destinations: json.destinations || [] });
       setActiveDay(0);
       setShowRouteMap(false);
 
@@ -932,8 +1012,6 @@ export default function DestinationsPage() {
                 {data.itinerary[activeDay].activities?.map((act, i) => {
                   const loc = act.location || {};
                   const c = act.coordinates;
-                  const prevC =
-                    data.itinerary[activeDay].activities?.[i - 1]?.coordinates;
                   const singleSeg = segmentForIndex(
                     routesByDay[activeDay]?.segments || [],
                     i

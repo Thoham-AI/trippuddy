@@ -25,7 +25,7 @@ function GoogleMapPinIcon({ size = 16 }) {
 
 const isRealPhoto = (url) => {
   if (!url) return false;
-  return !url.includes("maps.googleapis.com/maps/api/staticmap");
+  return !String(url).includes("maps.googleapis.com/maps/api/staticmap");
 };
 
 function ensureHttp(url) {
@@ -35,20 +35,21 @@ function ensureHttp(url) {
   return u.startsWith("http") ? u : `https://${u}`;
 }
 
-export default function ActivityCard({
-  act,
-  loc,
-  mode,
-  coordinates,
-  singleSeg,
-  LeafletMap,
-  userLocation,
-  flag,
-  iconFor,
-  setPopupImage,
-  onSuggestAlternative,
-  onFoodSuggestions,
-}) {
+export default function ActivityCard(props) {
+  /**
+   * ✅ Compatibility + crash-proofing:
+   * - Old callsite: <ActivityCard act={...} loc={...} coordinates={...} ... />
+   * - New callsite: <ActivityCard activity={...} />
+   */
+  const act = props.activity ?? props.act ?? {};
+  const loc = props.loc ?? act.location ?? {};
+  const coordinates = props.coordinates ?? act.coordinates ?? act.coords ?? null;
+
+  const LeafletMap = props.LeafletMap; // may be undefined (handle below)
+  const userLocation = props.userLocation ?? null;
+  const singleSeg = props.singleSeg ?? null;
+  const setPopupImage = props.setPopupImage;
+
   const c = coordinates;
 
   /* ---------------- WEATHER (unchanged) ---------------- */
@@ -122,13 +123,16 @@ export default function ActivityCard({
 
   const lat = c?.lat;
   const lon = c?.lon;
-  const label = encodeURIComponent(act.title || loc?.name || "Location");
+
+  const label = encodeURIComponent(
+    (act?.title ?? loc?.name ?? "Location").toString()
+  );
 
   const fallbackMaps =
     typeof lat === "number" && typeof lon === "number"
       ? `https://www.google.com/maps?q=${lat},${lon}(${label})`
       : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-          `${act.title || ""} ${loc?.name || ""} ${loc?.country || ""}`.trim()
+          `${act?.title || ""} ${loc?.name || ""} ${loc?.country || ""}`.trim()
         )}`;
 
   const websiteOrMapHref = website || mapsUrl || fallbackMaps;
@@ -136,7 +140,7 @@ export default function ActivityCard({
   // ✅ Weather URL (unchanged destination, just link-based)
   const weatherHref =
     typeof lat === "number" && typeof lon === "number"
-      ? `https://openweathermap.org/weathermap?lat=${lat}&lon=${lon}&zoom=10`
+      ? `https://openweathermap.org/weathermap?basemap=map&layers=temperature&lat=${lat}&lon=${lon}&zoom=12`
       : "";
 
   return (
@@ -156,7 +160,7 @@ export default function ActivityCard({
       {/* LEFT */}
       <div>
         <div style={{ fontSize: 18, fontWeight: 700 }}>
-          <b>{act.time || "Flexible"}</b> — {act.title}
+          <b>{act?.time || "Flexible"}</b> — {act?.title || loc?.name || "Activity"}
         </div>
 
         {/* Buttons under title (left) */}
@@ -245,7 +249,7 @@ export default function ActivityCard({
           </a>
         </div>
 
-        {act.details && (
+        {act?.details && (
           <div style={{ marginTop: 12, color: "#374151" }}>{act.details}</div>
         )}
       </div>
@@ -266,10 +270,10 @@ export default function ActivityCard({
             fontSize: 14,
           }}
         >
-          {isRealPhoto(act.image) ? (
+          {isRealPhoto(act?.image) ? (
             <img
               src={act.image}
-              alt={act.title}
+              alt={act?.title || loc?.name || "Photo"}
               onPointerDownCapture={stopOnly}
               onMouseDownCapture={stopOnly}
               onClickCapture={(e) => {
@@ -291,12 +295,13 @@ export default function ActivityCard({
           )}
         </div>
 
-        {c && (
+        {/* ✅ Only render map if LeafletMap exists */}
+        {c && typeof LeafletMap === "function" && (
           <div style={{ height: 160, borderRadius: 10, overflow: "hidden" }}>
             <LeafletMap
               lat={c.lat}
               lon={c.lon}
-              popup={loc.name}
+              popup={loc?.name || act?.title || ""}
               routes={singleSeg}
               user={userLocation}
             />
