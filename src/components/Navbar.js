@@ -4,172 +4,164 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 export default function Navbar() {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [hasNotification, setHasNotification] = useState(false);
+  const [user, setUser] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authType, setAuthType] = useState('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+
   const router = useRouter();
 
-  // Fake notification (simulated)
   useEffect(() => {
-    setTimeout(() => setHasNotification(true), 4000);
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+    };
+    checkUser();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
+  const handleAuthAction = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    let error;
+    if (authType === 'login') {
+      const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+      error = err;
+    } else {
+      const { error: err } = await supabase.auth.signUp({ email, password });
+      error = err;
+      if (!error) alert("Success! Check your email.");
+    }
+    setLoading(false);
+    if (error) alert(error.message);
+    else setShowAuthModal(false);
+  };
+
+  const handleGoogleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin }
+    });
+    if (error) alert(error.message);
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    router.refresh();
+  };
+
   return (
-    <nav
-      style={{
-        background: "#1e3a8a",
-        color: "#fff",
-        padding: "12px 26px",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-      }}
-    >
-      {/* LOGO + NAME */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          cursor: "pointer",
-        }}
-      >
-        <div
-          style={{ transition: "transform 0.4s ease" }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.transform = "rotate(360deg)")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.transform = "rotate(0deg)")
-          }
-        >
-          <Image src="/logo.png" alt="TripPuddy Logo" width={42} height={42} />
-        </div>
-
-        <Link
-          href="/"
-          style={{
-            color: "#fff",
-            textDecoration: "none",
-            fontSize: 32,
-            fontWeight: "bold",
-            whiteSpace: "nowrap",
-          }}
-        >
-          TripPuddy
-        </Link>
+    <nav style={navStyle}>
+      {/* TRÁI: LOGO */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <Image src="/logo.png" alt="Logo" width={42} height={42} />
+        <Link href="/" style={logoTextStyle}>TripPuddy</Link>
       </div>
 
-      {/* NAVIGATION BUTTONS */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 28,
-        }}
-      >
-        <Link href="/" style={navLinkStyle}>
-          Home
-        </Link>
-
-        <Link href="/itinerary" style={navLinkStyle}>
-          Itinerary
-        </Link>
-
-        <Link href="/about" style={navLinkStyle}>
-          About
-        </Link>
-
-        <Link href="/contact" style={navLinkStyle}>
-          Contact
-        </Link>
-
-        {/* ⭐ NEW — CHAT BUTTON */}
-        <Link href="/chat" style={navLinkStyle}>
-          Chat
-        </Link>
-
-        {/* 🔔 Notification Bell → route to chat */}
-        <div
-          onClick={() => {
-            setHasNotification(false);
-            router.push("/chat");
-          }}
-          style={{
-            position: "relative",
-            cursor: "pointer",
-            fontSize: 30,
-            padding: "4px 10px",
-            transition: "0.3s",
-            color: hasNotification ? "#facc15" : "#ffffff",
-            animation: hasNotification ? "shake 0.4s ease-in-out" : "none",
-          }}
-        >
-          🔔
-
-          {/* Red unread dot */}
-          {hasNotification && (
-            <span
-              style={{
-                position: "absolute",
-                top: 2,
-                right: 5,
-                width: 10,
-                height: 10,
-                background: "#ef4444",
-                borderRadius: "50%",
-                boxShadow: "0 0 6px rgba(0,0,0,0.4)",
-              }}
-            ></span>
-          )}
-        </div>
-
-        <Link
-          href="/login"
-          style={{
-            padding: "12px 30px",
-            background: "linear-gradient(135deg, #14b8a6, #0ea5e9)",
-            borderRadius: "32px",
-            fontSize: "22px",
-            fontWeight: "600",
-            color: "white",
-            textDecoration: "none",
-            whiteSpace: "nowrap",
-            boxShadow: "0 4px 8px rgba(0,0,0,0.25)",
-          }}
-        >
-          Login
-        </Link>
+      {/* GIỮA: GIỮ NGUYÊN MENU CỦA BẠN */}
+      <div style={{ display: "flex", alignItems: "center", gap: 35 }}>
+        <Link href="/" style={navLinkStyle}>Home</Link>
+        <Link href="/chat" style={navLinkStyle}>Chat</Link>
+        <Link href="/itinerary" style={navLinkStyle}>Itinerary</Link>
+        <Link href="/contact" style={navLinkStyle}>Contact</Link>
+        <Link href="/about" style={navLinkStyle}>About</Link>
       </div>
 
-      {/* Bell Shake Animation */}
-      <style>{`
-        @keyframes shake {
-          0% { transform: translateX(0); }
-          25% { transform: translateX(-3px); }
-          50% { transform: translateX(3px); }
-          75% { transform: translateX(-2px); }
-          100% { transform: translateX(0); }
-        }
-      `}</style>
+      {/* PHẢI: CHUÔNG & LOGIN/USER */}
+      <div style={{ display: "flex", alignItems: "center", gap: 25 }}>
+        {/* Chuông vàng từ ảnh gốc */}
+        <span style={{ fontSize: "30px", cursor: "pointer" }}>🔔</span>
+
+        {user ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 15 }}>
+            <span style={{ color: "#facc15", fontWeight: "bold", fontSize: "20px" }}>
+              {user.email.split('@')[0]}
+            </span>
+            <button onClick={logout} style={logoutButtonStyle}>Logout</button>
+          </div>
+        ) : (
+          <button onClick={() => { setAuthType('login'); setShowAuthModal(true); }} style={loginButtonStyle}>
+            Login
+          </button>
+        )}
+      </div>
+
+      {/* MODAL (GIẤU PASSWORD & GOOGLE) */}
+      {showAuthModal && (
+        <div style={modalOverlay}>
+          <div style={modalContent}>
+            <h2 style={{ color: '#1e3a8a', marginBottom: 20 }}>Welcome</h2>
+            
+            <button onClick={handleGoogleLogin} style={socialButtonStyle}>
+               <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" alt="G" />
+               Continue with Google
+            </button>
+
+            <div style={divider}><span>OR</span></div>
+
+            <form onSubmit={handleAuthAction}>
+              <input type="email" placeholder="Email" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <div style={{ position: 'relative' }}>
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  placeholder="Password" 
+                  style={inputStyle} 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)} 
+                  required 
+                />
+                <span onClick={() => setShowPassword(!showPassword)} style={eyeIconStyle}>
+                  {showPassword ? "👁️" : "🙈"}
+                </span>
+              </div>
+              <button type="submit" disabled={loading} style={submitButtonStyle}>
+                {loading ? '...' : (authType === 'login' ? 'Login' : 'Sign Up')}
+              </button>
+            </form>
+            
+            <button onClick={() => setShowAuthModal(false)} style={cancelButtonStyle}>Cancel</button>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }
 
-const navLinkStyle = {
-  padding: "8px 14px",
-  borderRadius: 6,
-  fontWeight: 500,
-  fontSize: "22px",
-  color: "#facc15",
-  textDecoration: "none",
-  transition: "all 0.3s ease",
-  whiteSpace: "nowrap",
+// --- CSS STYLES ---
+const navStyle = {
+  background: "#1e3a8a", padding: "12px 30px", display: "flex", 
+  justifyContent: "space-between", alignItems: "center", position: "fixed", 
+  top: 0, left: 0, right: 0, zIndex: 1000
 };
+
+const logoTextStyle = { color: "#fff", textDecoration: "none", fontSize: 32, fontWeight: "bold" };
+const navLinkStyle = { fontSize: "22px", color: "#facc15", textDecoration: "none", fontWeight: "bold" };
+
+const loginButtonStyle = {
+  padding: "10px 30px", background: "linear-gradient(135deg, #14b8a6, #0ea5e9)",
+  borderRadius: "32px", fontSize: "20px", fontWeight: "bold", color: "white", border: "none", cursor: "pointer"
+};
+
+const logoutButtonStyle = {
+  padding: "10px 25px", background: "#0ea5e9", borderRadius: "32px", 
+  fontSize: "18px", fontWeight: "bold", color: "white", border: "none", cursor: "pointer"
+};
+
+const modalOverlay = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 };
+const modalContent = { background: 'white', padding: '30px', borderRadius: '20px', width: '350px', textAlign: 'center' };
+const inputStyle = { width: '100%', padding: '12px', marginBottom: '10px', borderRadius: '8px', border: '1px solid #ccc', boxSizing: 'border-box', color: '#333' };
+const eyeIconStyle = { position: 'absolute', right: '10px', top: '10px', cursor: 'pointer', fontSize: '20px' };
+const submitButtonStyle = { width: '100%', padding: '12px', borderRadius: '8px', background: '#1e3a8a', color: 'white', fontWeight: 'bold', border: 'none', cursor: "pointer" };
+const socialButtonStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ccc', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: 'pointer', marginBottom: '10px', color: '#333', fontWeight: 'bold' };
+const divider = { display: 'flex', alignItems: 'center', margin: '15px 0', color: '#999', fontSize: '12px' };
+const cancelButtonStyle = { background: 'none', border: 'none', color: '#666', marginTop: '10px', cursor: 'pointer' };
