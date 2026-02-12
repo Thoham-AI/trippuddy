@@ -64,27 +64,27 @@ export default function Navbar() {
     <nav style={navStyle}>
       {/* TRÁI: LOGO */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <Image src="/logo.png" alt="Logo" width={42} height={42} />
+        <Image src="/logo.png" alt="Logo" width={35} height={35} />
         <Link href="/" style={logoTextStyle}>TripPuddy</Link>
       </div>
 
-      {/* GIỮA: GIỮ NGUYÊN MENU CỦA BẠN */}
-      <div style={{ display: "flex", alignItems: "center", gap: 35 }}>
+      {/* GIỮA: MENU ĐẦY ĐỦ */}
+      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
         <Link href="/" style={navLinkStyle}>Home</Link>
-        <Link href="/chat" style={navLinkStyle}>Chat</Link>
-        <Link href="/itinerary" style={navLinkStyle}>Itinerary</Link>
+        <Link href="/itinerary" style={navLinkStyle}>Build Trip</Link>
+        <Link href="/my-trips" style={navLinkStyle}>My Trips</Link>
+        <Link href="/chat" style={navLinkStyle}>Chat AI</Link>
         <Link href="/contact" style={navLinkStyle}>Contact</Link>
         <Link href="/about" style={navLinkStyle}>About</Link>
       </div>
 
-      {/* PHẢI: CHUÔNG & LOGIN/USER */}
-      <div style={{ display: "flex", alignItems: "center", gap: 25 }}>
-        {/* Chuông vàng từ ảnh gốc */}
-        <span style={{ fontSize: "30px", cursor: "pointer" }}>🔔</span>
+      {/* PHẢI: CHUÔNG & USER */}
+      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+        <span style={{ fontSize: "24px", cursor: "pointer" }}>🔔</span>
 
         {user ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 15 }}>
-            <span style={{ color: "#facc15", fontWeight: "bold", fontSize: "20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ color: "#facc15", fontWeight: "bold", fontSize: "15px" }}>
               {user.email.split('@')[0]}
             </span>
             <button onClick={logout} style={logoutButtonStyle}>Logout</button>
@@ -96,39 +96,26 @@ export default function Navbar() {
         )}
       </div>
 
-      {/* MODAL (GIẤU PASSWORD & GOOGLE) */}
+      {/* MODAL (GIỮ NGUYÊN LOGIC CỦA BẠN) */}
       {showAuthModal && (
         <div style={modalOverlay}>
           <div style={modalContent}>
             <h2 style={{ color: '#1e3a8a', marginBottom: 20 }}>Welcome</h2>
-            
             <button onClick={handleGoogleLogin} style={socialButtonStyle}>
-               <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="20" alt="G" />
+               <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" alt="G" />
                Continue with Google
             </button>
-
             <div style={divider}><span>OR</span></div>
-
             <form onSubmit={handleAuthAction}>
               <input type="email" placeholder="Email" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} required />
               <div style={{ position: 'relative' }}>
-                <input 
-                  type={showPassword ? "text" : "password"} 
-                  placeholder="Password" 
-                  style={inputStyle} 
-                  value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
-                  required 
-                />
-                <span onClick={() => setShowPassword(!showPassword)} style={eyeIconStyle}>
-                  {showPassword ? "👁️" : "🙈"}
-                </span>
+                <input type={showPassword ? "text" : "password"} placeholder="Password" style={inputStyle} value={password} onChange={(e) => setPassword(e.target.value)} required />
+                <span onClick={() => setShowPassword(!showPassword)} style={eyeIconStyle}>{showPassword ? "👁️" : "🙈"}</span>
               </div>
               <button type="submit" disabled={loading} style={submitButtonStyle}>
                 {loading ? '...' : (authType === 'login' ? 'Login' : 'Sign Up')}
               </button>
             </form>
-            
             <button onClick={() => setShowAuthModal(false)} style={cancelButtonStyle}>Cancel</button>
           </div>
         </div>
@@ -139,29 +126,29 @@ export default function Navbar() {
 
 // --- CSS STYLES ---
 const navStyle = {
-  background: "#1e3a8a", padding: "12px 30px", display: "flex", 
+  background: "#1e3a8a", padding: "10px 25px", display: "flex", 
   justifyContent: "space-between", alignItems: "center", position: "fixed", 
-  top: 0, left: 0, right: 0, zIndex: 1000
+  top: 0, left: 0, right: 0, zIndex: 1000, height: "65px"
 };
 
-const logoTextStyle = { color: "#fff", textDecoration: "none", fontSize: 32, fontWeight: "bold" };
-const navLinkStyle = { fontSize: "22px", color: "#facc15", textDecoration: "none", fontWeight: "bold" };
+const logoTextStyle = { color: "#fff", textDecoration: "none", fontSize: 24, fontWeight: "bold" };
+const navLinkStyle = { fontSize: "15px", color: "#facc15", textDecoration: "none", fontWeight: "600" };
 
 const loginButtonStyle = {
-  padding: "10px 30px", background: "linear-gradient(135deg, #14b8a6, #0ea5e9)",
-  borderRadius: "32px", fontSize: "20px", fontWeight: "bold", color: "white", border: "none", cursor: "pointer"
+  padding: "8px 20px", background: "linear-gradient(135deg, #14b8a6, #0ea5e9)",
+  borderRadius: "20px", fontSize: "14px", fontWeight: "bold", color: "white", border: "none", cursor: "pointer"
 };
 
 const logoutButtonStyle = {
-  padding: "10px 25px", background: "#0ea5e9", borderRadius: "32px", 
-  fontSize: "18px", fontWeight: "bold", color: "white", border: "none", cursor: "pointer"
+  padding: "6px 15px", background: "#ef4444", borderRadius: "20px", 
+  fontSize: "13px", fontWeight: "bold", color: "white", border: "none", cursor: "pointer"
 };
 
-const modalOverlay = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 };
-const modalContent = { background: 'white', padding: '30px', borderRadius: '20px', width: '350px', textAlign: 'center' };
-const inputStyle = { width: '100%', padding: '12px', marginBottom: '10px', borderRadius: '8px', border: '1px solid #ccc', boxSizing: 'border-box', color: '#333' };
-const eyeIconStyle = { position: 'absolute', right: '10px', top: '10px', cursor: 'pointer', fontSize: '20px' };
-const submitButtonStyle = { width: '100%', padding: '12px', borderRadius: '8px', background: '#1e3a8a', color: 'white', fontWeight: 'bold', border: 'none', cursor: "pointer" };
-const socialButtonStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ccc', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: 'pointer', marginBottom: '10px', color: '#333', fontWeight: 'bold' };
-const divider = { display: 'flex', alignItems: 'center', margin: '15px 0', color: '#999', fontSize: '12px' };
-const cancelButtonStyle = { background: 'none', border: 'none', color: '#666', marginTop: '10px', cursor: 'pointer' };
+const modalOverlay = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 };
+const modalContent = { background: 'white', padding: '25px', borderRadius: '15px', width: '320px', textAlign: 'center' };
+const inputStyle = { width: '100%', padding: '10px', marginBottom: '8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' };
+const eyeIconStyle = { position: 'absolute', right: '10px', top: '8px', cursor: 'pointer' };
+const submitButtonStyle = { width: '100%', padding: '10px', borderRadius: '6px', background: '#1e3a8a', color: 'white', fontWeight: 'bold', border: 'none', cursor: "pointer" };
+const socialButtonStyle = { width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', marginBottom: '10px', fontWeight: '600' };
+const divider = { display: 'flex', alignItems: 'center', margin: '12px 0', color: '#999', fontSize: '11px' };
+const cancelButtonStyle = { background: 'none', border: 'none', color: '#666', marginTop: '8px', cursor: 'pointer', fontSize: '12px' };
