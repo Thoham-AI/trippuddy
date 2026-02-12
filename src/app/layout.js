@@ -1,6 +1,7 @@
 // src/app/layout.js
 import "./globals.css";
 import Navbar from "@/components/Navbar";
+import Script from "next/script"; // Import component Script của Next.js
 
 export const metadata = {
   title: "TripPuddy",
@@ -27,6 +28,20 @@ export default function RootLayout({ children }) {
       </head>
 
       <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
+        {/* Google Analytics - Nhớ thay G-XXXXXXX bằng mã thật từ Google Console của bạn */}
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXX"
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-XXXXXXX');
+          `}
+        </Script>
+
         <div className="flex flex-col min-h-screen">
           <Navbar />
           {children}
