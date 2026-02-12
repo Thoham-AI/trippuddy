@@ -151,6 +151,16 @@ export default function ItineraryDetail() {
         target="_blank" 
         rel="noopener noreferrer"
         style={bookingButtonStyle}
+        onClick={() => {
+          // ĐÂY CHÍNH LÀ NƠI GỬI TÊN SỰ KIỆN VỀ GOOGLE
+          if (typeof window !== 'undefined' && window.gtag) {
+            window.gtag('event', 'click_booking_affiliate', {
+              'event_category': 'affiliate',
+              'event_label': itinerary?.title,
+              'value': 1
+            });
+          }
+        }}
         onMouseOver={(e) => {
           e.currentTarget.style.backgroundColor = '#00224f';
           e.currentTarget.style.transform = 'translateY(-2px)';
@@ -162,6 +172,19 @@ export default function ItineraryDetail() {
       >
         🏨 Đặt khách sạn giá tốt tại Booking.com
       </a>
+
+      {/* CÂU THÔNG BÁO AFFILIATE MỚI THÊM VÀO */}
+      <p style={{ 
+        textAlign: 'center', 
+        marginTop: '12px', 
+        color: '#9ca3af', 
+        fontSize: '0.75rem',
+        fontStyle: 'italic',
+        lineHeight: '1.4'
+      }}>
+        Lưu ý: Với tư cách là đối tác của Booking.com, TripPuddy có thể nhận được một khoản hoa hồng nhỏ khi bạn thực hiện đặt phòng qua liên kết này. Điều này giúp chúng mình duy trì hệ thống miễn phí cho bạn.<br/>
+        <span style={{ fontSize: '0.7rem' }}>(As a Booking.com associate, I earn from qualifying purchases)</span>
+      </p>
 
       <p style={{ textAlign: 'center', marginTop: '20px', color: '#6b7280', fontSize: '0.85rem' }}>
         Cảm ơn bạn đã sử dụng TripPuddy! Chúc bạn có một chuyến đi tuyệt vời. 🇦🇺 🇻🇳
