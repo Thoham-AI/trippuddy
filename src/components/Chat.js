@@ -1,52 +1,50 @@
 'use client'
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import MicButton from './MicButton'
-import { supabase } from '@/lib/supabase'
+// ... các import khác giữ nguyên
 
-const TITLE_STORAGE_KEY = 'trippuddy_user_title';
 const PRESET_TITLES = ['Boss', 'Sir', 'Honey', 'Madam', 'Friend'];
 
 export default function Chat({ onNewDestinations }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  
+  // 1. Khởi tạo mặc định là 'Boss', không lấy từ localStorage nữa
   const [userTitle, setUserTitle] = useState('Boss')
   const [customTitleDraft, setCustomTitleDraft] = useState('')
-  const [isCustomMode, setIsCustomMode] = useState(false) // State mới để quản lý ô nhập liệu
+  const [isCustomMode, setIsCustomMode] = useState(false) 
+
   const bottomRef = useRef(null)
 
-  // Xử lý khi chọn dropdown
+  // 2. Logic xử lý khi chọn Dropdown
   const handleTitleChange = (val) => {
     if (val === 'Custom') {
       setIsCustomMode(true);
-      setUserTitle(''); // Tạm xóa title để hiện ô nhập
+      setUserTitle(''); // Xóa title hiện tại để người dùng nhập mới
     } else {
       setIsCustomMode(false);
-      persistTitle(val);
+      setUserTitle(val);
     }
   };
 
+  // 3. Xác định giá trị hiển thị trên select
   const titleSelectValue = useMemo(() => {
-    if (isCustomMode) return 'Custom';
-    if (PRESET_TITLES.includes(userTitle)) return userTitle;
-    return 'Custom';
+    if (isCustomMode || !PRESET_TITLES.includes(userTitle)) return 'Custom';
+    return userTitle;
   }, [userTitle, isCustomMode]);
 
-  useEffect(() => {
-    const stored = localStorage.getItem(TITLE_STORAGE_KEY);
-    if (stored) setUserTitle(stored);
-  }, []);
-
-  function persistTitle(v) {
-    const val = (v || '').trim() || 'Boss';
-    setUserTitle(val);
-    localStorage.setItem(TITLE_STORAGE_KEY, val);
-    setIsCustomMode(false);
+  // Hàm lưu tên tạm thời cho phiên làm việc này (không dùng localStorage)
+  function applyCustomTitle() {
+    if (customTitleDraft.trim()) {
+      setUserTitle(customTitleDraft.trim());
+      setIsCustomMode(false);
+      setCustomTitleDraft(''); // Xóa nháp sau khi lưu
+    }
   }
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, loading])
+  // --- Giữ nguyên các hàm useEffect cho Location và Tin nhắn ---
 
   async function sendMessage(e, voiceText) {
     if (e) e.preventDefault()
@@ -61,14 +59,17 @@ export default function Chat({ onNewDestinations }) {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, userTitle })
+        body: JSON.stringify({
+          messages: history,
+          userTitle: userTitle || "Guest" // Gửi tên đã chọn cho AI
+        })
       });
 
       const data = await res.json();
       if (data.destinations?.length > 0) {
         onNewDestinations(data.destinations);
       }
-      setMessages([...history, { role: 'assistant', content: data.reply }]);
+      setMessages([...history, { role: 'assistant', content: data.reply || "Done!" }]);
     } catch (err) {
       setMessages([...history, { role: 'assistant', content: "⚠️ Error kết nối." }]);
     } finally {
@@ -79,7 +80,9 @@ export default function Chat({ onNewDestinations }) {
   return (
     <div className="chat-wrapper">
       <div className="chat-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-        <div style={{ fontSize: 24, fontWeight: 900 }}>TripPuddy Chat 💬</div>
+        <div style={{ fontSize: 28, fontWeight: 900 }}>TripPuddy Chat 💬</div>
+        
+        {/* Dropdown chọn danh xưng */}
         <select 
           value={titleSelectValue} 
           onChange={(e) => handleTitleChange(e.target.value)} 
@@ -90,24 +93,25 @@ export default function Chat({ onNewDestinations }) {
         </select>
       </div>
 
-      {/* Ô nhập Custom hiện ra ở đây */}
+      {/* Ô nhập Custom hiện ra khi chọn 'Custom...' hoặc khi Title chưa xác định */}
       {isCustomMode && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
           <input 
             value={customTitleDraft} 
             onChange={(e) => setCustomTitleDraft(e.target.value)} 
-            placeholder="Type your name..." 
+            placeholder="Bạn muốn được gọi là gì?" 
             style={{ flex: 1, padding: '10px', borderRadius: 12, border: '1px solid #cbd5e1' }} 
           />
           <button 
-            onClick={() => persistTitle(customTitleDraft)} 
-            style={{ padding: '10px 14px', borderRadius: 12, background: '#0ea5a4', color: 'white', border: 'none' }}
+            onClick={applyCustomTitle} 
+            style={{ padding: '10px 14px', borderRadius: 12, background: '#0ea5a4', color: 'white', border: 'none', cursor: 'pointer' }}
           >
-            Save
+            Lưu tên
           </button>
         </div>
       )}
 
+      {/* ... Phần hiển thị tin nhắn và input giữ nguyên ... */}
       <div className="chat-messages">
         {messages.map((msg, i) => (
           <div key={i} className={`bubble ${msg.role}`}>{msg.content}</div>
@@ -118,7 +122,7 @@ export default function Chat({ onNewDestinations }) {
 
       <form className="chat-input" onSubmit={sendMessage}>
         <MicButton onResult={(t) => sendMessage(undefined, t)} />
-        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask TripPuddy..." />
+        <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Hỏi TripPuddy bất cứ điều gì..." />
         <button type="submit" className="send-btn">Send</button>
       </form>
     </div>
