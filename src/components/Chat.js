@@ -2,128 +2,104 @@
 import { useEffect, useRef, useState } from 'react'
 import MicButton from './MicButton'
 
-export default function Chat({ onNewDestinations }) {
+export default function Chat({ onNewDestinations, likedPlaces = [], dislikedPlaces = [] }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  
-  // State quản lý danh xưng
   const [userTitle, setUserTitle] = useState('Boss')
   const [customTitleDraft, setCustomTitleDraft] = useState('')
   const [isCustomMode, setIsCustomMode] = useState(false)
-
   const bottomRef = useRef(null)
-  const presets = ['Boss', 'Sir', 'Honey', 'Madam', 'Friend']
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, loading])
+  // Hàm quan trọng để hiển thị Itinerary đẹp mắt
+  const renderContent = (content) => {
+    return content.split('\n').map((line, i) => {
+      if (line.startsWith('DAY')) {
+        return <h4 key={i} style={{ color: '#0ea5a4', fontWeight: 'bold', marginTop: '15px', borderBottom: '1px solid #eee' }}>{line}</h4>;
+      }
+      return <p key={i} style={{ margin: '5px 0', fontSize: '14px' }}>{line}</p>;
+    });
+  };
 
-  const handleTitleChange = (val) => {
-    if (val === 'Custom') {
-      setIsCustomMode(true);
-      setUserTitle(''); // Để trống để chờ nhập
-    } else {
+  const handleSaveTitle = () => {
+    if (customTitleDraft.trim()) {
+      setUserTitle(customTitleDraft.trim());
       setIsCustomMode(false);
-      setUserTitle(val);
     }
-  }
+  };
 
-  async function sendMessage(e, voiceText) {
+  async function sendMessage(e, voiceText, isFinal = false) {
     if (e) e.preventDefault()
-    const text = (voiceText || input || '').trim()
-    if (!text) return
+    const text = isFinal ? "Please finalize my travel itinerary." : (voiceText || input || '').trim()
+    if (!text && !isFinal) return
 
-    // Lấy tên cuối cùng: nếu đang gõ custom thì dùng nháp, nếu chọn preset thì dùng preset
-    const finalTitleToSend = isCustomMode ? (customTitleDraft || 'Guest') : userTitle;
-
-    const userMsg = { role: 'user', content: text }
-    const history = [...messages, userMsg]
-    
-    setMessages(history)
-    setInput('')
-    setLoading(true)
+    const history = [...messages, { role: 'user', content: text }]
+    setMessages(history); setInput(''); setLoading(true);
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          messages: history, 
-          userTitle: finalTitleToSend 
-        })
-      })
-
-      const data = await res.json()
-      if (data.destinations?.length > 0) {
-        onNewDestinations(data.destinations)
-      }
-      setMessages([...history, { role: 'assistant', content: data.reply }])
+        body: JSON.stringify({ messages: history, userTitle, likedPlaces, dislikedPlaces, isFinalizing: isFinal })
+      });
+      const data = await res.json();
+      if (data.destinations?.length > 0) onNewDestinations(data.destinations);
+      setMessages([...history, { role: 'assistant', content: data.reply }]);
     } catch (err) {
-      setMessages([...history, { role: 'assistant', content: "⚠️ Có lỗi rồi Boss ơi!" }])
+      setMessages([...history, { role: 'assistant', content: "⚠️ Error connecting..." }]);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
+  useEffect(() => {
+    window.createItinerary = () => sendMessage(null, null, true);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, likedPlaces, dislikedPlaces]);
+
   return (
-    <div className="chat-wrapper" style={{ width: '100%', padding: '10px' }}>
-      <div className="chat-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-        <h3 style={{ fontWeight: '900', fontSize: '20px' }}>TripPuddy 💬</h3>
+    <div className="chat-wrapper" style={{ background: '#f8fafc', borderRadius: '20px', padding: '20px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h2 style={{ fontSize: '22px', fontWeight: '900', color: '#1e293b' }}>TripPuddy 💬</h2>
         <select 
-          value={isCustomMode ? "Custom" : userTitle} 
-          onChange={(e) => handleTitleChange(e.target.value)}
-          style={{ padding: '8px', borderRadius: '10px', border: '1px solid #ccc' }}
+          value={isCustomMode ? "Custom" : (['Boss','Sir','Honey','Madam','Friend'].includes(userTitle) ? userTitle : "Custom")}
+          onChange={(e) => e.target.value === 'Custom' ? setIsCustomMode(true) : (setUserTitle(e.target.value), setIsCustomMode(false))}
+          style={{ padding: '8px', borderRadius: '10px', border: '1px solid #cbd5e1' }}
         >
-          {presets.map(t => <option key={t} value={t}>{t}</option>)}
-          <option value="Custom">Custom...</option>
+          {['Boss','Sir','Honey','Madam','Friend'].map(t => <option key={t} value={t}>{t}</option>)}
+          <option value="Custom">Tên riêng...</option>
         </select>
       </div>
 
       {isCustomMode && (
         <div style={{ display: 'flex', gap: '8px', marginBottom: '15px' }}>
-          <input 
-            value={customTitleDraft} 
-            onChange={(e) => setCustomTitleDraft(e.target.value)}
-            placeholder="Bạn muốn được gọi là gì?"
-            style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '2px solid #0ea5e9' }}
-          />
-          <button 
-            onClick={() => { if(customTitleDraft) setIsCustomMode(false) }}
-            style={{ padding: '10px 15px', background: '#0ea5e9', color: 'white', borderRadius: '10px', border: 'none' }}
-          >
-            Lưu
-          </button>
+          <input value={customTitleDraft} onChange={e => setCustomTitleDraft(e.target.value)} placeholder="Nhập tên..." style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '2px solid #0ea5a4' }} />
+          <button onClick={handleSaveTitle} style={{ background: '#0ea5a4', color: 'white', padding: '10px 20px', borderRadius: '10px', border: 'none' }}>Lưu</button>
         </div>
       )}
 
-      <div className="chat-messages" style={{ height: '350px', overflowY: 'auto', background: '#fff', borderRadius: '15px', padding: '15px', marginBottom: '15px' }}>
+      <div style={{ height: '400px', overflowY: 'auto', paddingRight: '10px' }}>
         {messages.map((msg, i) => (
-          <div key={i} className={`bubble ${msg.role}`} style={{ marginBottom: '10px', textAlign: msg.role === 'user' ? 'right' : 'left' }}>
-            <span style={{ 
-              display: 'inline-block', 
-              padding: '10px', 
-              borderRadius: '12px', 
-              background: msg.role === 'user' ? '#0ea5e9' : '#f1f5f9',
-              color: msg.role === 'user' ? '#fff' : '#000'
+          <div key={i} style={{ marginBottom: '15px', textAlign: msg.role === 'user' ? 'right' : 'left' }}>
+            <div style={{ 
+              display: 'inline-block', padding: '12px 16px', borderRadius: '18px', 
+              background: msg.role === 'user' ? '#0ea5a4' : '#fff',
+              color: msg.role === 'user' ? '#fff' : '#334155',
+              boxShadow: msg.role === 'assistant' ? '0 2px 5px rgba(0,0,0,0.05)' : 'none',
+              maxWidth: '85%', textAlign: 'left'
             }}>
-              {msg.content}
-            </span>
+              {msg.role === 'assistant' ? renderContent(msg.content) : msg.content}
+            </div>
           </div>
         ))}
-        {loading && <div style={{ fontSize: '12px', color: '#888' }}>TripPuddy đang trả lời...</div>}
+        {loading && <div style={{ color: '#64748b', fontSize: '13px' }}>TripPuddy đang thiết kế lịch trình...</div>}
         <div ref={bottomRef}></div>
       </div>
 
-      <form onSubmit={sendMessage} style={{ display: 'flex', gap: '8px' }}>
-        <MicButton onResult={(t) => sendMessage(null, t)} />
-        <input 
-          value={input} 
-          onChange={(e) => setInput(e.target.value)} 
-          placeholder="Nhập tin nhắn..."
-          style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #ddd' }}
-        />
-        <button type="submit" style={{ padding: '10px 20px', background: '#0ea5e9', color: '#fff', borderRadius: '12px', border: 'none', fontWeight: 'bold' }}>Gửi</button>
+      <form onSubmit={sendMessage} style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+        <MicButton onResult={t => sendMessage(null, t)} />
+        <input value={input} onChange={e => setInput(e.target.value)} placeholder="Chat với mình nhé..." style={{ flex: 1, padding: '12px', borderRadius: '15px', border: '1px solid #e2e8f0' }} />
+        <button type="submit" style={{ background: '#0ea5a4', color: 'white', padding: '12px 24px', borderRadius: '15px', border: 'none', fontWeight: 'bold' }}>Gửi</button>
       </form>
     </div>
   )
