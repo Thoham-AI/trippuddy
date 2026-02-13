@@ -18,7 +18,7 @@ export default function ItineraryDetail() {
       
       if (!error && data) {
         setItinerary(data);
-        // Tăng lượt xem tự động mỗi khi truy cập
+        // Automatically increment view count on access
         await supabase
           .from('itineraries')
           .update({ view_count: (data.view_count || 0) + 1 })
@@ -29,7 +29,7 @@ export default function ItineraryDetail() {
     if (id) fetchDetail();
   }, [id]);
 
-  // --- HỆ THỐNG STYLE (CSS-in-JS) ---
+  // --- STYLING SYSTEM (CSS-in-JS) ---
   const containerStyle = {
     padding: '100px 20px',
     maxWidth: '850px',
@@ -85,7 +85,7 @@ export default function ItineraryDetail() {
     gap: '10px',
     width: '100%',
     padding: '18px',
-    backgroundColor: '#003580', // Màu xanh đặc trưng của Booking
+    backgroundColor: '#003580', // Booking.com blue
     color: 'white',
     borderRadius: '12px',
     fontWeight: '700',
@@ -95,17 +95,17 @@ export default function ItineraryDetail() {
     transition: 'all 0.3s ease'
   };
 
-  // --- HÀM RENDER NỘI DUNG THÔNG MINH ---
+  // --- SMART CONTENT RENDERER ---
   const renderItineraryContent = () => {
     const content = itinerary.content;
     
-    // Trường hợp 1: Dữ liệu là Object có thuộc tính days (Lý tưởng nhất)
+    // Case 1: Data is an object with a 'days' property (Ideal)
     if (typeof content === 'object' && content !== null && content.days) {
       return content.days.map((day, index) => (
         <div key={index} style={dayCardStyle}>
           <div style={dayBadgeStyle}>{index + 1}</div>
           <h3 style={{ marginTop: 0, color: '#1e3a8a', fontSize: '1.0rem' }}>
-            Ngày {index + 1}: {day.title || "Khám phá"}
+            Day {index + 1}: {day.title || "Explore"}
           </h3>
           <p style={{ color: '#374151', fontSize: '1.1rem', whiteSpace: 'pre-wrap' }}>
             {day.activity || day.description}
@@ -114,7 +114,7 @@ export default function ItineraryDetail() {
       ));
     }
 
-    // Trường hợp 2: Dữ liệu là Text thuần (AI đời cũ hoặc format lỗi)
+    // Case 2: Raw Text (Older AI versions or format error)
     return (
       <div style={{ whiteSpace: 'pre-wrap', color: '#374151', lineHeight: '1.8' }}>
         {typeof content === 'string' ? content : JSON.stringify(content, null, 2)}
@@ -122,37 +122,36 @@ export default function ItineraryDetail() {
     );
   };
 
-  if (loading) return <div style={containerStyle}>☕ Đang chuẩn bị hành trình cho bạn...</div>;
-  if (!itinerary) return <div style={containerStyle}>❌ Không tìm thấy dữ liệu chuyến đi.</div>;
+  if (loading) return <div style={containerStyle}>☕ Preparing your journey...</div>;
+  if (!itinerary) return <div style={containerStyle}>❌ Trip data not found.</div>;
 
   return (
     <div style={containerStyle}>
-      {/* Tiêu đề & Thông tin phụ */}
+      {/* Title & Meta Info */}
       <h1 style={{ color: '#111827', fontSize: '1.5rem', marginBottom: '10px', fontWeight: '800' }}>
-        {itinerary.title || "Hành trình du lịch"}
+        {itinerary.title || "Travel Itinerary"}
       </h1>
       
       <div style={infoHeaderStyle}>
-        <span>📅 Ngày tạo: {new Date(itinerary.created_at).toLocaleDateString('vi-VN')}</span>
-        <span>🔥 {itinerary.view_count || 0} lượt xem</span>
+        <span>📅 Created: {new Date(itinerary.created_at).toLocaleDateString('en-AU')}</span>
+        <span>🔥 {itinerary.view_count || 0} views</span>
       </div>
 
-      {/* Vùng hiển thị Lịch trình */}
+      {/* Itinerary Timeline Area */}
       <div style={timelineContainerStyle}>
         <h2 style={{ color: '#1e40af', marginBottom: '30px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          🗺️ Chi tiết lịch trình
+          🗺️ Itinerary Details
         </h2>
         {renderItineraryContent()}
       </div>
       
-      {/* Nút Booking "Hái ra tiền" */}
+      {/* Smart Booking Button */}
       <a 
-        href="https://www.booking.com/index.html?aid=480743" 
+        href={`https://www.booking.com/searchresults.html?ss=${encodeURIComponent(itinerary.title)}&aid=480743&lang=en-gb`}
         target="_blank" 
         rel="noopener noreferrer"
         style={bookingButtonStyle}
         onClick={() => {
-          // ĐÂY CHÍNH LÀ NƠI GỬI TÊN SỰ KIỆN VỀ GOOGLE
           if (typeof window !== 'undefined' && window.gtag) {
             window.gtag('event', 'click_booking_affiliate', {
               'event_category': 'affiliate',
@@ -170,10 +169,10 @@ export default function ItineraryDetail() {
           e.currentTarget.style.transform = 'translateY(0)';
         }}
       >
-        🏨 Đặt khách sạn giá tốt tại Booking.com
+        🏨 Book Best Hotels in {itinerary.title.split(' ').pop()} at Booking.com
       </a>
 
-      {/* CÂU THÔNG BÁO AFFILIATE MỚI THÊM VÀO */}
+      {/* AFFILIATE DISCLOSURE */}
       <p style={{ 
         textAlign: 'center', 
         marginTop: '12px', 
@@ -182,12 +181,12 @@ export default function ItineraryDetail() {
         fontStyle: 'italic',
         lineHeight: '1.4'
       }}>
-        Lưu ý: Với tư cách là đối tác của Booking.com, TripPuddy có thể nhận được một khoản hoa hồng nhỏ khi bạn thực hiện đặt phòng qua liên kết này. Điều này giúp chúng mình duy trì hệ thống miễn phí cho bạn.<br/>
+        Note: As a Booking.com associate, TripPuddy may earn a small commission from qualifying purchases made through this link. This helps us keep the system free for you.<br/>
         <span style={{ fontSize: '0.7rem' }}>(As a Booking.com associate, I earn from qualifying purchases)</span>
       </p>
 
       <p style={{ textAlign: 'center', marginTop: '20px', color: '#6b7280', fontSize: '0.85rem' }}>
-        Cảm ơn bạn đã sử dụng TripPuddy! Chúc bạn có một chuyến đi tuyệt vời. 🇦🇺 🇻🇳
+        Thank you for using TripPuddy! Have an amazing trip. 🇦🇺 🇻🇳
       </p>
     </div>
   );
