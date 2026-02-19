@@ -1,6 +1,12 @@
+/** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
-    "./src/app/**/*.{js,jsx,ts,tsx}",
-    "./src/components/**/*.{js,jsx,ts,tsx}",
+    "./src/**/*.{js,ts,jsx,tsx,mdx}", // Phải có dòng này để quét trong thư mục src
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
   ],
-};
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}

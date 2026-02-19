@@ -1,135 +1,116 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 
-/**
- * HomePage Component
- * Path: C:\Users\Anyone\travel-ai-app\src\app\page.js
- */
 export default function Home() {
   const affiliateId = "480743";
   const [randomDestinations, setRandomDestinations] = useState([]);
-  const [heroImage, setHeroImage] = useState('https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=1950&q=80');
-
-  // Background pool for the Hero section
-  const heroPool = [
-    'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=1920&q=80', // Adventure/Road Trip
-    'https://images.unsplash.com/photo-1523482580672-f109ba8cb9be?w=1920&q=80', // Sydney Opera House
-    'https://images.unsplash.com/photo-1528127269322-539801943592?w=1920&q=80', // Ha Long Bay, Vietnam
-    'https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?w=1920&q=80', // Sydney Harbour Bridge
-    'https://images.unsplash.com/photo-1555921015-5532091f6026?w=1920&q=80'  // Hanoi Old Quarter
-  ];
+  const [heroImage, setHeroImage] = useState('');
 
   const pools = {
     vietnam: [
-      { name: 'Phu Quoc', region: 'Vietnam', image: 'https://images.unsplash.com/photo-1589782104152-17367f8b5ec8?w=600&q=80' },
-      { name: 'Da Nang', region: 'Vietnam', image: 'https://images.unsplash.com/photo-1559592413-7ece350ac161?w=600&q=80' },
-      { name: 'Hanoi', region: 'Vietnam', image: 'https://images.unsplash.com/photo-1555921015-5532091f6026?w=600&q=80' },
-      { name: 'Ho Chi Minh City', region: 'Vietnam', image: 'https://images.unsplash.com/photo-1509030464150-144d4267e681?w=600&q=80' },
-      { name: 'Ha Long Bay', region: 'Vietnam', image: 'https://images.unsplash.com/photo-1528127269322-539801943592?w=600&q=80' }
+      { name: 'Phu Quoc', region: 'Vietnam' },
+      { name: 'Da Nang', region: 'Vietnam' },
+      { name: 'Hanoi', region: 'Vietnam' },
+      { name: 'Ho Chi Minh City', region: 'Vietnam' }
     ],
     australia: [
-      { name: 'Sydney', region: 'NSW, Australia', image: 'https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?w=600&q=80' },
-      { name: 'Melbourne', region: 'VIC, Australia', image: 'https://images.unsplash.com/photo-1514395462725-fb4566210144?w=600&q=80' },
-      { name: 'Cairns', region: 'QLD, Australia', image: 'https://images.unsplash.com/photo-1551065160-2646960858fb?w=600&q=80' },
-      { name: 'Gold Coast', region: 'QLD, Australia', image: 'https://images.unsplash.com/photo-1533154683836-84ea7a0bc310?w=600&q=80' },
-      { name: 'Perth', region: 'WA, Australia', image: 'https://images.unsplash.com/photo-1534008757030-2670ca430399?w=600&q=80' }
+      { name: 'Sydney', region: 'NSW, Australia' },
+      { name: 'Melbourne', region: 'VIC, Australia' },
+      { name: 'Gold Coast', region: 'QLD, Australia' }
     ],
     international: [
-      { name: 'Tokyo', region: 'Japan', image: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?w=600&q=80' },
-      { name: 'Paris', region: 'France', image: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=600&q=80' },
-      { name: 'London', region: 'UK', image: 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?w=600&q=80' },
-      { name: 'Bali', region: 'Indonesia', image: 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=600&q=80' },
-      { name: 'New York', region: 'USA', image: 'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?w=600&q=80' }
+      { name: 'Tokyo', region: 'Japan' },
+      { name: 'Paris', region: 'France' },
+      { name: 'Bali', region: 'Indonesia' }
     ]
   };
 
   useEffect(() => {
-    // 1. Randomize Hero Background
-    const randomHero = heroPool[Math.floor(Math.random() * heroPool.length)];
-    setHeroImage(randomHero);
+    const accessKey = process.env.NEXT_PUBLIC_UNSPLASH_ACCESS_KEY;
+    const initPage = async () => {
+      try {
+        const res = await fetch(`https://api.unsplash.com/photos/random?query=travel&client_id=${accessKey}&orientation=landscape`);
+        const data = await res.json();
+        setHeroImage(data.urls?.regular);
+      } catch (e) { setHeroImage('https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=1920'); }
 
-    // 2. Randomize Destinations (2 VN, 1 AU, 1 INT)
-    const pickRandom = (arr, count) => [...arr].sort(() => 0.5 - Math.random()).slice(0, count);
-    const selected = [
-      ...pickRandom(pools.vietnam, 2),
-      ...pickRandom(pools.australia, 1),
-      ...pickRandom(pools.international, 1)
-    ];
-    setRandomDestinations(selected.sort(() => 0.5 - Math.random()));
+      const pickRandom = (arr, count) => [...arr].sort(() => 0.5 - Math.random()).slice(0, count);
+      const selected = [...pickRandom(pools.vietnam, 2), ...pickRandom(pools.australia, 1), ...pickRandom(pools.international, 1)];
+
+      const withImages = await Promise.all(selected.map(async (city) => {
+        try {
+          const res = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(city.name)}&client_id=${accessKey}&per_page=1`);
+          const data = await res.json();
+          return { ...city, image: data.results[0]?.urls?.small };
+        } catch (e) { return { ...city, image: 'https://images.unsplash.com/photo-1503220317375-aaad61436b1b?w=800' }; }
+      }));
+      setRandomDestinations(withImages);
+    };
+    initPage();
   }, []);
 
-  return (
-    <div>
-      {/* NAVBAR */}
-      <div className="navbar">
-        <div className="logo text-3xl font-bold">TripPuddy</div>
-        <div className="navbar-links">
-          <a href="/">Home</a>
-          <a href="/chat" className="chat-btn">Chat AI</a>
-        </div>
-        <a href="/login" className="nav-login-btn">Login</a>
-      </div>
+  // STYLE NÚT SEND TỪ CHATBOT (COPY 1:1)
+  const chatbotButtonStyle = {
+    backgroundColor: '#2563eb',
+    color: 'white',
+    border: 'none',
+    padding: '10px 20px',
+    borderRadius: '20px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: '14px',
+    textDecoration: 'none',
+    display: 'inline-block',
+    transition: 'background-color 0.2s',
+  };
 
-      {/* HERO SECTION with Randomized Background */}
-      <div className="hero" style={{
-        backgroundImage: `linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.3)), url('${heroImage}')`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        textAlign: 'center', 
-        display: 'flex', 
-        flexDirection: 'column',
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        minHeight: '80vh', 
-        color: 'white',
-        transition: 'background-image 0.5s ease-in-out'
-      }}>
-        <h1 style={{ fontSize: '3.5rem', marginBottom: '20px', textShadow: '2px 2px 10px rgba(0,0,0,0.7)', fontWeight: '800' }}>
-          Plan Your Next Adventure
-        </h1>
-        <p style={{ fontSize: '1.2rem', marginBottom: '40px', textShadow: '1px 1px 5px rgba(0,0,0,0.5)' }}>
-          AI-powered travel planning for local and international trips.
-        </p>
-        <a href="/chat">
-          <button style={{ 
-            padding: '18px 45px', 
-            backgroundColor: '#3b82f6', 
-            color: 'white', 
-            border: 'none', 
-            borderRadius: '35px', 
-            fontWeight: 'bold', 
-            cursor: 'pointer',
-            boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
-          }}>
-            ✨ Start Planning with AI
-          </button>
+  return (
+    <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', fontFamily: 'sans-serif' }}>
+      
+      {/* NAVBAR */}
+      <nav style={{ display: 'flex', justifyContent: 'space-between', padding: '15px 5%', alignItems: 'center', backgroundColor: 'white', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', position: 'sticky', top: 0, zIndex: 1000 }}>
+        <div style={{ fontSize: '24px', fontWeight: '900', color: '#2563eb' }}>TripPuddy</div>
+        
+        <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+          <a href="/" style={{ textDecoration: 'none', color: '#374151', fontWeight: '600' }}>Home</a>
+          
+          {/* Đã sửa đường dẫn theo ý Boss */}
+          <a href="/itinerary" style={{ textDecoration: 'none', color: '#374151', fontWeight: '600' }}>Build Trip</a>
+          <a href="/my-trips" style={{ textDecoration: 'none', color: '#374151', fontWeight: '600' }}>My Trips</a>
+          <a href="/contact" style={{ textDecoration: 'none', color: '#374151', fontWeight: '600' }}>Contact</a>
+          <a href="/about" style={{ textDecoration: 'none', color: '#374151', fontWeight: '600' }}>About</a>
+          
+          <a href="/chat" style={chatbotButtonStyle}>
+            Chat AI ✨
+          </a>
+        </div>
+      </nav>
+
+      {/* HERO */}
+      <div style={{ backgroundImage: `linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url('${heroImage}')`, backgroundSize: 'cover', backgroundPosition: 'center', height: '60vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: 'white' }}>
+        <h1 style={{ fontSize: '3.5rem', fontWeight: '900', marginBottom: '10px', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>Plan Your Adventure</h1>
+        <p style={{ fontSize: '1.2rem', marginBottom: '30px' }}>AI-powered travel planning for you.</p>
+        <a href="/chat" style={{ ...chatbotButtonStyle, padding: '16px 45px', fontSize: '18px' }}>
+            Start Chatting with AI
         </a>
       </div>
 
-      {/* SUGGESTIONS SECTION */}
-      <section style={{ padding: '80px 20px', maxWidth: '1200px', margin: '0 auto' }}>
-        <h2 style={{ fontSize: '2.2rem', fontWeight: '800', marginBottom: '40px', textAlign: 'center' }}>
-          Featured Destinations
-        </h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '30px' }}>
+      {/* DESTINATIONS (4 CỘT) */}
+      <section style={{ padding: '60px 5%', maxWidth: '1400px', margin: '0 auto' }}>
+        <h2 style={{ fontSize: '2.2rem', marginBottom: '40px', textAlign: 'center', fontWeight: '900', color: '#1e293b' }}>Featured Destinations</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
           {randomDestinations.map((city) => (
-            <div key={city.name} style={{ borderRadius: '20px', overflow: 'hidden', backgroundColor: '#fff', boxShadow: '0 10px 30px rgba(0,0,0,0.08)', border: '1px solid #f1f5f9' }}>
-              <div style={{ height: '200px', width: '100%', overflow: 'hidden' }}>
-                <img 
-                  src={city.image} 
-                  alt={city.name}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
+            <div key={city.name} style={{ backgroundColor: 'white', borderRadius: '30px', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', border: '4px solid white' }}>
+              <div style={{ height: '160px' }}>
+                <img src={city.image} alt={city.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
-              <div style={{ padding: '25px' }}>
-                <h3 style={{ margin: '0 0 5px 0', fontSize: '1.4rem', color: '#1e3a8a', fontWeight: '700' }}>{city.name}</h3>
-                <p style={{ color: '#9ca3af', fontSize: '0.85rem', marginBottom: '20px' }}>{city.region}</p>
-                <a 
-                  href={`https://www.booking.com/searchresults.html?ss=${encodeURIComponent(city.name)}&aid=${affiliateId}&lang=en-gb`}
-                  target="_blank" rel="noopener noreferrer"
-                  style={{ display: 'block', backgroundColor: '#003580', color: 'white', padding: '12px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: '700', textDecoration: 'none', textAlign: 'center' }}
-                >
-                  View Hotel Deals
+              <div style={{ padding: '20px' }}>
+                <h3 style={{ margin: '0', fontSize: '1.1rem', fontWeight: '800', color: '#1e3a8a' }}>{city.name}</h3>
+                <p style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: '15px' }}>{city.region}</p>
+                <a href={`https://www.booking.com/searchresults.html?ss=${encodeURIComponent(city.name)}&aid=${affiliateId}`} 
+                   target="_blank" rel="noopener noreferrer"
+                   style={{ ...chatbotButtonStyle, display: 'block', textAlign: 'center' }}>
+                  View Hotels
                 </a>
               </div>
             </div>
@@ -138,10 +119,8 @@ export default function Home() {
       </section>
 
       {/* FOOTER */}
-      <footer style={{ padding: '60px 20px', textAlign: 'center', borderTop: '1px solid #f3f4f6' }}>
-        <p style={{ fontSize: '0.85rem', color: '#9ca3af', fontStyle: 'italic' }}>
-          © 2026 TripPuddy. Developed by a Vietnamese-Australian Citizen. 🇦🇺 🇻🇳
-        </p>
+      <footer style={{ padding: '40px', textAlign: 'center', color: '#64748b', borderTop: '1px solid #e2e8f0' }}>
+        <p>© 2026 TripPuddy. Developed by a Vietnamese-Australian Citizen. 🇦🇺 🇻🇳</p>
       </footer>
     </div>
   );

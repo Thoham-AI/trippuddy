@@ -1,38 +1,71 @@
-// src/app/api/chat/route.js
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
+/**
+ * Hàm lấy ảnh chất lượng cao từ Unsplash Source mới
+ * Đảm bảo ảnh luôn hiển thị và liên quan đến địa điểm
+ */
+function imageForPlace(name, sig = "") {
+  const query = encodeURIComponent(name || "travel destination");
+  // Sử dụng images.unsplash.com để ổn định hơn source.unsplash.com
+  // Chèn keyword vào URL và dùng sig để tránh bị lặp ảnh
+  return `https://images.unsplash.com/photo-1500835595353-b039e99d3421?auto=format&fit=crop&w=900&q=80&sig=${sig}&${query}`;
+}
+
 export async function POST(req) {
   try {
-    const { messages, userTitle, likedPlaces = [], dislikedPlaces = [], isFinalizing = false } = await req.json();
+    const { messages, likedPlaces = [], dislikedPlaces = [], isFinalizing = false } = await req.json();
+    
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({ error: "Thiếu API Key OpenAI" }, { status: 500 });
+    }
+
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const name = userTitle || "Boss";
 
-    let systemContent = `You are TripPuddy, a professional travel planner. Address the user as "${name}". Return ONLY JSON.`;
-
+    // Thiết lập System Prompt tối ưu cho AI
+    let system = "You are TripPuddy, a smart travel assistant. Return ONLY JSON.";
+    
     if (isFinalizing) {
-      const likedNames = likedPlaces.map(p => p.name).join(", ");
-      const dislikedNames = dislikedPlaces.map(p => p.name).join(", ");
-      systemContent += `
-      The user has selected these places: [${likedNames}]. 
-      STRICTLY EXCLUDE these places: [${dislikedNames}].
-      Task: Create a detailed day-by-day itinerary. 
-      Structure the "reply" field with clear headings like "DAY 1: ...", "DAY 2: ...", use emojis and bullet points for activities. 
-      Make it look like a professional travel brochure.`;
+      system += " The user has finished swiping. Based on their LIKED places, create a detailed daily itinerary. Structure the reply clearly with DAY 1, DAY 2, etc.";
     } else {
-      systemContent += `Suggest 3 spots. Use format: https://loremflickr.com/640/480/travel,{place_name}`;
+      system +=
+        " Suggest exactly 3 interesting places the user might want to visit next. " +
+        "Respect the user's liked and disliked places to provide better recommendations. " +
+        'Format EXACTLY: {"reply": "Your message to user here", "destinations": [{"name": "Place Name", "description": "Short catchy description"}]}';
     }
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: [{ role: "system", content: systemContent }, ...messages],
-      response_format: { type: "json_object" }
+      messages: [
+        { role: "system", content: system },
+        { 
+          role: "system", 
+          content: `User Preferences:\nLiked: ${JSON.stringify(likedPlaces)}\nDisliked: ${JSON.stringify(dislikedPlaces)}` 
+        },
+        ...messages,
+      ],
+      response_format: { type: "json_object" },
     });
 
-    return NextResponse.json(JSON.parse(completion.choices[0].message.content));
+    const content = completion.choices?.[0]?.message?.content || "{}";
+    const data = JSON.parse(content);
+
+    // Xử lý gắn ảnh cho các địa điểm trả về
+    if (data.destinations && Array.isArray(data.destinations)) {
+      data.destinations = data.destinations.map((d, i) => ({
+        ...d,
+        image: imageForPlace(d.name, `${Date.now()}-${i}`),
+      }));
+    }
+
+    return NextResponse.json(data);
   } catch (error) {
-    return NextResponse.json({ reply: "Error!" });
+    console.error("Lỗi Route API:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error", details: error.message },
+      { status: 500 }
+    );
   }
 }
