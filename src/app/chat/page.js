@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState } from "react";
 import TinderCard from "react-tinder-card";
 import { FaHeart, FaTimes, FaMicrophone } from "react-icons/fa";
 
@@ -11,156 +11,149 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const childRefs = useRef([]);
 
-  // 1. LOGIC CHỌN ĐỊA ĐIỂM KHÁC NHAU (POI)
-  const handleSend = async (forcedText) => {
-    const userMsg = forcedText || input.trim();
-    if (!userMsg || loading) return;
-
-    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
-    setLoading(true);
-    setInput("");
-
-    try {
-      const accessKey = process.env.NEXT_PUBLIC_UNSPLASH_ACCESS_KEY;
-      
-      // Danh sách địa điểm cụ thể để gợi ý (giúp tránh trùng ảnh)
-      const poiList = {
-        "hanoi": ["Hoan Kiem Lake", "Temple of Literature", "West Lake", "Hanoi Opera House", "St. Joseph's Cathedral"],
-        "da nang": ["Golden Bridge", "Marble Mountains", "My Khe Beach", "Dragon Bridge", "Son Tra Peninsula"],
-        "sydney": ["Opera House", "Bondi Beach", "Harbour Bridge", "The Rocks", "Darling Harbour"]
-      };
-
-      // Lấy danh sách 5 điểm, nếu không có trong list trên thì tạo từ khóa mặc định
-      const locations = poiList[userMsg.toLowerCase()] || [
-        `${userMsg} landmark`, `${userMsg} street`, `${userMsg} culture`, `${userMsg} food`, `${userMsg} nature`
-      ];
-
-      // Gọi API Unsplash cho từng địa điểm riêng biệt
-      const cardPromises = locations.map(async (place) => {
-        const res = await fetch(
-          `https://api.unsplash.com/search/photos?query=${encodeURIComponent(place + " " + userMsg)}&client_id=${accessKey}&per_page=1`
-        );
-        const data = await res.json();
-        return {
-          name: place,
-          image: data.results?.[0]?.urls?.regular || "https://images.unsplash.com/photo-1503220317375-aaad61436b1b?w=800"
-        };
-      });
-
-      const newCards = await Promise.all(cardPromises);
-      
-      if (newCards.length > 0) {
-        setDb(newCards.reverse()); // Đảo ngược để tấm đầu tiên nằm trên cùng
-        setMessages((prev) => [...prev, { role: "ai", content: `I found 5 unique places in ${userMsg}. Swipe to explore!` }]);
-      }
-    } catch (error) {
-      setMessages((prev) => [...prev, { role: "ai", content: "Sorry, I couldn't load the images." }]);
-    } finally {
-      setLoading(false);
-    }
+  // Thư viện tọa độ ngầm để vây vùng tìm kiếm chính xác
+  const provinceCoords = {
+    "thái bình": { lat: 20.4463, lng: 106.3364 },
+    "hà giang": { lat: 22.8233, lng: 104.9835 },
+    "ninh bình": { lat: 20.2506, lng: 105.9745 },
+    "hà nội": { lat: 21.0285, lng: 105.8542 }
   };
 
-  // 2. LOGIC NHẬN DIỆN GIỌNG NÓI
+// ... (Giữ nguyên các phần state bên trên)
+
+const handleSend = async (forcedText) => {
+  const userMsg = forcedText || input.trim();
+  if (!userMsg || loading) return;
+
+  setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+  setLoading(true);
+  setInput("");
+
+  try {
+    const googleKey = process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY;
+    // Tăng cường query để Google trả về nhiều kết quả hơn
+    const refinedQuery = `best tourist attractions landmarks scenery in ${userMsg} Vietnam`;
+    
+    const res = await fetch(`/api/google-proxy?input=${encodeURIComponent(refinedQuery)}`);
+    const googleData = await res.json();
+
+    if (googleData.results && googleData.results.length > 0) {
+      const filteredCards = googleData.results
+        .filter(place => place.photos && place.user_ratings_total > 30) // Giảm nhẹ lọc để có nhiều ảnh hơn
+        .map((place) => ({
+          name: place.name,
+          image: `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1000&photoreference=${place.photos[0].photo_reference}&key=${googleKey}`
+        }));
+
+      if (filteredCards.length > 0) {
+        // Tăng số lượng hiển thị lên (Google Text Search thường trả về tối đa 20 kết quả/trang)
+        setDb(filteredCards.reverse()); 
+        setMessages((prev) => [...prev, { role: "ai", content: `I found ${filteredCards.length} spots! Swipe to explore.` }]);
+      }
+    }
+  } catch (error) {
+    console.error(error);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// Sửa lại hàm swipe để đảm bảo đồng bộ với thư viện
+const onSwipe = (direction, nameToDelete) => {
+  console.log('You swiped: ' + direction);
+  setDb((prev) => prev.filter(item => item.name !== nameToDelete));
+};
+
+// ... trong phần return JSX:
+
+<div style={{ position: 'relative', width: '340px', height: '400px', marginTop: '20px', flexShrink: 0 }}>
+  {db.map((item, index) => (
+    <TinderCard 
+      key={item.name + index} 
+      onSwipe={(dir) => onSwipe(dir, item.name)} // Gọi hàm xóa khi quẹt xong
+      preventSwipe={["up", "down"]}
+      swipeThreshold={100} // CỰC KỲ QUAN TRỌNG: Độ dài (pixel) cần kéo để xác nhận là Swipe
+      flickOnSwipe={true}   // Giúp ảnh bay vèo đi khi nhả chuột mạnh
+      style={{ position: 'absolute' }}
+    >
+      <div style={{ 
+        backgroundColor: 'white', width: '340px', height: '380px', borderRadius: '30px', 
+        overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.15)', border: '4px solid white', 
+        position: 'relative', cursor: 'grab' // Đổi con trỏ chuột cho giống app thật
+      }}>
+        <img 
+          src={item.image} 
+          style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} 
+          alt={item.name} 
+        />
+        <div style={{ position: 'absolute', bottom: 0, width: '100%', padding: '20px', background: 'linear-gradient(transparent, rgba(0,0,0,0.9))', color: 'white', boxSizing: 'border-box' }}>
+          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold' }}>{item.name}</h2>
+        </div>
+      </div>
+    </TinderCard>
+  ))}
+</div>
+
+  const swipe = () => {
+    setDb((prev) => {
+      const newDb = [...prev];
+      newDb.pop();
+      return newDb;
+    });
+  };
+
   const startListening = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return alert("Your browser does not support voice recognition.");
-
+    if (!SpeechRecognition) return;
     const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US'; 
-    recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => setIsListening(false);
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setInput(transcript);
-      handleSend(transcript);
-    };
+    recognition.lang = 'en-US';
+    recognition.onresult = (e) => handleSend(e.results[0][0].transcript);
     recognition.start();
   };
 
-  // 3. LOGIC NÚT BẤM (GIỮ NGUYÊN)
-  const swipe = (dir) => {
-    if (db.length > 0) {
-      const newDb = [...db];
-      newDb.pop();
-      setDb(newDb);
-    }
-  };
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f3f4f6', padding: '10px', fontFamily: 'sans-serif' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100vh', backgroundColor: '#f3f4f6', overflow: 'hidden' }}>
       
-      {/* KHU VỰC THẺ BÀI */}
-      <div style={{ position: 'relative', width: '340px', height: '420px', marginTop: '20px' }}>
-        {db.map((city, index) => (
-          <TinderCard 
-            className="absolute" 
-            key={city.image} 
-            onSwipe={(dir) => swipe(dir)}
-            preventSwipe={["up", "down"]}
-          >
-            <div style={{ 
-              backgroundColor: 'white', width: '340px', height: '400px', borderRadius: '30px', 
-              overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', border: '4px solid white', position: 'relative' 
-            }}>
-              <img src={city.image} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt={city.name} />
-              <div style={{ position: 'absolute', bottom: 0, width: '100%', padding: '20px', background: 'linear-gradient(transparent, rgba(0,0,0,0.9))', color: 'white', boxSizing: 'border-box' }}>
-                <h2 style={{ margin: 0, fontSize: '20px' }}>{city.name}</h2>
+      {/* TINDER CARDS */}
+      <div style={{ position: 'relative', width: '340px', height: '400px', marginTop: '20px', flexShrink: 0 }}>
+        {db.map((item, index) => (
+          <div key={item.name + index} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
+            <TinderCard onSwipe={swipe} preventSwipe={["up", "down"]}>
+              <div style={{ 
+                backgroundColor: 'white', width: '340px', height: '380px', borderRadius: '30px', 
+                overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.15)', border: '4px solid white', position: 'relative' 
+              }}>
+                <img src={item.image} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} alt="Destinations" />
+                <div style={{ position: 'absolute', bottom: 0, width: '100%', padding: '20px', background: 'linear-gradient(transparent, rgba(0,0,0,0.9))', color: 'white', boxSizing: 'border-box' }}>
+                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold' }}>{item.name}</h2>
+                </div>
               </div>
-            </div>
-          </TinderCard>
+            </TinderCard>
+          </div>
         ))}
       </div>
 
-      {/* CÁC NÚT ĐIỀU KHIỂN */}
-      <div style={{ display: 'flex', gap: '30px', marginBottom: '20px' }}>
-        <button 
-          onClick={() => swipe('left')}
-          style={{ width: '60px', height: '60px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#ef4444', fontSize: '24px', boxShadow: '0 4px 10px rgba(0,0,0,0.1)', cursor: 'pointer' }}
-        >
-          <FaTimes />
-        </button>
-        <button 
-          onClick={() => swipe('right')}
-          style={{ width: '60px', height: '60px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#22c55e', fontSize: '24px', boxShadow: '0 4px 10px rgba(0,0,0,0.1)', cursor: 'pointer' }}
-        >
-          <FaHeart />
-        </button>
+      {/* CONTROLS */}
+      <div style={{ display: 'flex', gap: '40px', margin: '15px 0', zIndex: 10 }}>
+        <button onClick={swipe} style={{ width: '60px', height: '60px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#ef4444', fontSize: '24px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', cursor: 'pointer' }}><FaTimes /></button>
+        <button onClick={swipe} style={{ width: '60px', height: '60px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#22c55e', fontSize: '24px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', cursor: 'pointer' }}><FaHeart /></button>
       </div>
 
-      {/* LỊCH SỬ CHAT */}
-      <div style={{ width: '100%', maxWidth: '450px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* MESSAGES */}
+      <div style={{ width: '100%', maxWidth: '450px', flexGrow: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', padding: '0 15px 10px 15px' }}>
         {messages.map((m, i) => (
-          <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', backgroundColor: m.role === 'user' ? '#2563eb' : 'white', color: m.role === 'user' ? 'white' : '#374151', padding: '12px 16px', borderRadius: '20px', maxWidth: '85%', fontSize: '14px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
+          <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', backgroundColor: m.role === 'user' ? '#2563eb' : 'white', color: m.role === 'user' ? 'white' : '#333', padding: '10px 16px', borderRadius: '20px', maxWidth: '85%', fontSize: '14px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' }}>
             {m.content}
           </div>
         ))}
       </div>
 
-      {/* KHUNG NHẬP LIỆU */}
-      <div style={{ width: '100%', maxWidth: '450px', backgroundColor: 'white', borderRadius: '25px', padding: '6px', display: 'flex', alignItems: 'center', boxShadow: '0 -5px 25px rgba(0,0,0,0.05)', marginBottom: '10px' }}>
-        <button 
-          onClick={startListening}
-          style={{ border: 'none', backgroundColor: 'transparent', padding: '10px', color: isListening ? '#ef4444' : '#64748b', cursor: 'pointer', fontSize: '18px' }}
-        >
-          <FaMicrophone />
-        </button>
-        <input
-          type="text" 
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder={isListening ? "Listening..." : "Enter a city..."}
-          style={{ flex: 1, padding: '10px', border: 'none', outline: 'none', fontSize: '16px' }}
-        />
-        <button 
-          onClick={() => handleSend()} 
-          disabled={loading}
-          style={{ backgroundColor: '#2563eb', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '20px', fontWeight: 'bold', cursor: 'pointer' }}
-        >
-          {loading ? '...' : 'Send'}
-        </button>
+      {/* INPUT */}
+      <div style={{ width: '90%', maxWidth: '400px', backgroundColor: 'white', borderRadius: '30px', padding: '5px 15px', display: 'flex', alignItems: 'center', boxShadow: '0 -5px 20px rgba(0,0,0,0.05)', marginBottom: '15px', flexShrink: 0 }}>
+        <button onClick={startListening} style={{ border: 'none', background: 'none', color: '#64748b', padding: '10px' }}><FaMicrophone /></button>
+        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder="Where do we go?" style={{ flex: 1, border: 'none', outline: 'none', padding: '10px', fontSize: '15px' }} />
+        <button onClick={() => handleSend()} style={{ backgroundColor: '#2563eb', color: 'white', border: 'none', padding: '8px 18px', borderRadius: '20px', fontWeight: 'bold' }}>Send</button>
       </div>
     </div>
   );
