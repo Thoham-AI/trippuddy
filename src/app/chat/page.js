@@ -21,7 +21,9 @@ export default function ChatPage() {
 
     try {
       const googleKey = process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY;
-      const res = await fetch(`/api/google-proxy?input=${encodeURIComponent(userMsg)}`);
+      
+      // SỬA CHỖ NÀY: Gọi trực tiếp Google API bằng Key đã được Boss whitelist domain trippuddy.com
+      const res = await fetch(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(userMsg)}&key=${googleKey}`);
       const googleData = await res.json();
       
       if (googleData.results) {
@@ -35,7 +37,8 @@ export default function ChatPage() {
         setDb(cards.reverse());
       }
     } catch (e) {
-      console.error(e);
+      console.error("Lỗi gọi API:", e);
+      setMessages((prev) => [...prev, { role: "ai", content: "Sorry Boss, something went wrong with the connection." }]);
     } finally {
       setLoading(false);
     }
@@ -75,7 +78,7 @@ export default function ChatPage() {
         overflow: 'hidden' 
       }}>
         
-        {/* VÙNG THẺ - Giữ nguyên logic fix quẹt cho Boss */}
+        {/* VÙNG THẺ */}
         <div style={{ position: 'relative', width: '320px', height: '360px', flexShrink: 0, touchAction: 'none' }}>
           {db.length > 0 ? (
             db.map((item) => (
@@ -115,13 +118,13 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* 3. VÙNG CHAT - Tăng kích thước và sửa hiển thị */}
+        {/* 3. VÙNG CHAT */}
         <div style={{ 
           width: '100%', 
           maxWidth: '600px', 
           backgroundColor: 'white',
           borderRadius: '30px 30px 0 0', 
-          flex: 1, // Chiếm toàn bộ không gian còn lại
+          flex: 1, 
           display: 'flex', 
           flexDirection: 'column', 
           padding: '15px',
@@ -129,7 +132,6 @@ export default function ChatPage() {
           marginTop: '10px',
           overflow: 'hidden'
         }}>
-          {/* Danh sách tin nhắn */}
           <div style={{ 
             flex: 1, 
             overflowY: 'auto', 
@@ -137,8 +139,8 @@ export default function ChatPage() {
             flexDirection: 'column', 
             gap: '12px', 
             paddingBottom: '10px',
-            scrollbarWidth: 'none', // Ẩn scrollbar trên Firefox
-            msOverflowStyle: 'none' // Ẩn scrollbar trên IE
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none'
           }}>
             {messages.map((m, i) => (
               <div key={i} style={{ 
@@ -153,7 +155,6 @@ export default function ChatPage() {
             ))}
           </div>
 
-          {/* Ô nhập liệu */}
           <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: '30px', padding: '6px 15px', border: '1px solid #e2e8f0' }}>
             <input 
               type="text" 
