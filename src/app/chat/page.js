@@ -20,13 +20,14 @@ export default function ChatPage() {
     setInput("");
 
     try {
-      const googleKey = process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY;
-      
-      // SỬA CHỖ NÀY: Gọi trực tiếp Google API bằng Key đã được Boss whitelist domain trippuddy.com
-      const res = await fetch(`https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(userMsg)}&key=${googleKey}`);
+      // Gọi qua Proxy để tránh lỗi CORS và Referer Restrictions
+      const res = await fetch(`/api/google-proxy?input=${encodeURIComponent(userMsg)}`);
       const googleData = await res.json();
       
-      if (googleData.results) {
+      if (googleData.results && googleData.results.length > 0) {
+        // Sử dụng Key mới (không giới hạn domain) để hiển thị ảnh
+        const googleKey = process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY;
+
         const cards = googleData.results.slice(0, 8).map((place) => ({
           id: place.place_id,
           name: place.name,
@@ -34,11 +35,15 @@ export default function ChatPage() {
             ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${place.photos[0].photo_reference}&key=${googleKey}`
             : "https://via.placeholder.com/400"
         }));
+
+        // Đảo ngược mảng để kết quả đầu tiên hiện lên trên cùng của stack
         setDb(cards.reverse());
+      } else {
+        setMessages((prev) => [...prev, { role: "ai", content: "I couldn't find any places there. Try another spot?" }]);
       }
     } catch (e) {
-      console.error("Lỗi gọi API:", e);
-      setMessages((prev) => [...prev, { role: "ai", content: "Sorry Boss, something went wrong with the connection." }]);
+      console.error(e);
+      setMessages((prev) => [...prev, { role: "ai", content: "Connection error. Please try again!" }]);
     } finally {
       setLoading(false);
     }
@@ -78,42 +83,64 @@ export default function ChatPage() {
         overflow: 'hidden' 
       }}>
         
-        {/* VÙNG THẺ */}
-        <div style={{ position: 'relative', width: '320px', height: '360px', flexShrink: 0, touchAction: 'none' }}>
+        {/* VÙNG THÈ - Chồng 8 lớp thẻ lên nhau */}
+        <div style={{ position: 'relative', width: '320px', height: '360px', flexShrink: 0 }}>
           {db.length > 0 ? (
-            db.map((item) => (
-              <div key={item.id} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 50 }}>
+            db.map((item, index) => (
+              <div 
+                key={item.id} 
+                style={{ 
+                  position: 'absolute', 
+                  top: 0, 
+                  left: 0, 
+                  width: '100%', 
+                  height: '100%', 
+                  zIndex: index // Ép thẻ sau nằm dưới thẻ trước
+                }}
+              >
                 <TinderCard 
-                  onSwipe={() => setDb((prev) => prev.filter(v => v.id !== item.id))}
-                  onCardLeftScreen={() => setDb((prev) => prev.filter(v => v.id !== item.id))}
+                  onSwipe={() => {
+                    // Xóa thẻ khỏi state sau khi quẹt để lộ thẻ bên dưới
+                    setDb((prev) => prev.filter(v => v.id !== item.id));
+                  }}
                   preventSwipe={["up", "down"]}
-                  swipeThreshold={30} 
-                  flickOnSwipe={true}
                 >
                   <div style={{ 
-                    backgroundColor: 'white', width: '320px', height: '340px', borderRadius: '25px', 
-                    overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', border: '3px solid white', 
-                    position: 'relative', cursor: 'grab'
+                    backgroundColor: 'white', 
+                    width: '320px', 
+                    height: '340px', 
+                    borderRadius: '25px', 
+                    overflow: 'hidden', 
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.1)', 
+                    position: 'relative',
+                    border: '2px solid #eee'
                   }}>
                     <img 
                       src={item.image} 
-                      onDragStart={(e) => e.preventDefault()}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', userSelect: 'none' }} 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} 
                     />
-                    <div style={{ position: 'absolute', bottom: 0, width: '100%', padding: '20px 15px 60px', background: 'linear-gradient(transparent, rgba(0,0,0,0.9))', color: 'white', pointerEvents: 'none' }}>
+                    <div style={{ 
+                      position: 'absolute', 
+                      bottom: 0, 
+                      width: '100%', 
+                      padding: '20px 15px 60px', 
+                      background: 'linear-gradient(transparent, rgba(0,0,0,0.9))', 
+                      color: 'white' 
+                    }}>
                       <h2 style={{ margin: 0, fontSize: '16px' }}>{item.name}</h2>
                     </div>
-                    <div style={{ position: 'absolute', bottom: '15px', width: '100%', display: 'flex', justifyContent: 'center', gap: '40px', zIndex: 100 }}>
-                      <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setDb((prev) => prev.filter(v => v.id !== item.id)); }} style={{ width: '45px', height: '45px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#ef4444', boxShadow: '0 4px 10px rgba(0,0,0,0.2)', cursor: 'pointer' }}><FaTimes /></button>
-                      <button onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setDb((prev) => prev.filter(v => v.id !== item.id)); }} style={{ width: '45px', height: '45px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#22c55e', boxShadow: '0 4px 10px rgba(0,0,0,0.2)', cursor: 'pointer' }}><FaHeart /></button>
+                    {/* Các nút bấm Like/Dislike */}
+                    <div style={{ position: 'absolute', bottom: '15px', width: '100%', display: 'flex', justifyContent: 'center', gap: '40px' }}>
+                       <button onClick={() => setDb((prev) => prev.filter(v => v.id !== item.id))} style={{ width: '40px', height: '40px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaTimes /></button>
+                       <button onClick={() => setDb((prev) => prev.filter(v => v.id !== item.id))} style={{ width: '40px', height: '40px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#22c55e', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaHeart /></button>
                     </div>
                   </div>
                 </TinderCard>
               </div>
             ))
           ) : (
-            <div style={{ width: '300px', height: '320px', borderRadius: '25px', border: '2px dashed #ccc', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', textAlign: 'center', padding: '10px' }}>
-              Ready for a new trip?<br/>Type a location below!
+            <div style={{ width: '300px', height: '320px', borderRadius: '25px', border: '2px dashed #ccc', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', textAlign: 'center', padding: '20px' }}>
+              No more cards! <br/> Ask for another city.
             </div>
           )}
         </div>
@@ -153,6 +180,7 @@ export default function ChatPage() {
                 {m.content}
               </div>
             ))}
+            {loading && <div style={{ alignSelf: 'flex-start', color: '#94a3b8', fontSize: '13px' }}>TripPuddy is searching...</div>}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: '30px', padding: '6px 15px', border: '1px solid #e2e8f0' }}>
@@ -161,7 +189,7 @@ export default function ChatPage() {
               value={input} 
               onChange={(e) => setInput(e.target.value)} 
               onKeyDown={(e) => e.key === 'Enter' && handleSend()} 
-              placeholder="Ask TripPuddy..." 
+              placeholder="Ask TripPuddy (e.g. Sydney, An Giang...)" 
               style={{ flex: 1, border: 'none', outline: 'none', background: 'none', padding: '10px', fontSize: '15px' }} 
             />
             <button onClick={() => handleSend()} style={{ backgroundColor: '#2563eb', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '20px', fontWeight: 'bold', cursor: 'pointer' }}>
