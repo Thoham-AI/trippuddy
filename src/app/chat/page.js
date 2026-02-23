@@ -20,23 +20,26 @@ export default function ChatPage() {
     setInput("");
 
     try {
-      // Gọi qua Proxy để tránh lỗi CORS và Referer Restrictions
+      // Gọi qua Proxy để lấy dữ liệu sâu đã được nâng cấp
       const res = await fetch(`/api/google-proxy?input=${encodeURIComponent(userMsg)}`);
       const googleData = await res.json();
       
       if (googleData.results && googleData.results.length > 0) {
-        // Sử dụng Key mới (không giới hạn domain) để hiển thị ảnh
         const googleKey = process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY;
 
         const cards = googleData.results.slice(0, 8).map((place) => ({
           id: place.place_id,
           name: place.name,
+          rating: place.rating, // Dữ liệu sâu
+          user_ratings_total: place.user_ratings_total, // Dữ liệu sâu
+          price_level: place.price_level, // Dữ liệu sâu
+          description: place.description, // Dữ liệu sâu từ editorial_summary
           image: place.photos 
             ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${place.photos[0].photo_reference}&key=${googleKey}`
             : "https://via.placeholder.com/400"
         }));
 
-        // Đảo ngược mảng để kết quả đầu tiên hiện lên trên cùng của stack
+        // Đảo ngược mảng để kết quả đầu tiên hiện lên trên cùng
         setDb(cards.reverse());
       } else {
         setMessages((prev) => [...prev, { role: "ai", content: "I couldn't find any places there. Try another spot?" }]);
@@ -83,7 +86,7 @@ export default function ChatPage() {
         overflow: 'hidden' 
       }}>
         
-        {/* VÙNG THÈ - Chồng 8 lớp thẻ lên nhau */}
+        {/* VÙNG THẺ */}
         <div style={{ position: 'relative', width: '320px', height: '360px', flexShrink: 0 }}>
           {db.length > 0 ? (
             db.map((item, index) => (
@@ -95,12 +98,11 @@ export default function ChatPage() {
                   left: 0, 
                   width: '100%', 
                   height: '100%', 
-                  zIndex: index // Ép thẻ sau nằm dưới thẻ trước
+                  zIndex: index 
                 }}
               >
                 <TinderCard 
                   onSwipe={() => {
-                    // Xóa thẻ khỏi state sau khi quẹt để lộ thẻ bên dưới
                     setDb((prev) => prev.filter(v => v.id !== item.id));
                   }}
                   preventSwipe={["up", "down"]}
@@ -119,6 +121,8 @@ export default function ChatPage() {
                       src={item.image} 
                       style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} 
                     />
+                    
+                    {/* NỘI DUNG THẺ VỚI DỮ LIỆU SÂU */}
                     <div style={{ 
                       position: 'absolute', 
                       bottom: 0, 
@@ -127,8 +131,35 @@ export default function ChatPage() {
                       background: 'linear-gradient(transparent, rgba(0,0,0,0.9))', 
                       color: 'white' 
                     }}>
-                      <h2 style={{ margin: 0, fontSize: '16px' }}>{item.name}</h2>
+                      <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold' }}>{item.name}</h2>
+                      
+                      {/* Dòng Rating & Giá tiền */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '5px', fontSize: '13px', color: '#fbbf24' }}>
+                        {item.rating && (
+                          <span>⭐ {item.rating} ({item.user_ratings_total?.toLocaleString()})</span>
+                        )}
+                        {item.price_level && (
+                          <span style={{ color: '#fff' }}>• {"$".repeat(item.price_level)}</span>
+                        )}
+                      </div>
+
+                      {/* Mô tả ngắn */}
+                      {item.description && (
+                        <p style={{ 
+                          margin: '8px 0 0', 
+                          fontSize: '12px', 
+                          lineHeight: '1.4', 
+                          color: '#e2e8f0',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden'
+                        }}>
+                          {item.description}
+                        </p>
+                      )}
                     </div>
+
                     {/* Các nút bấm Like/Dislike */}
                     <div style={{ position: 'absolute', bottom: '15px', width: '100%', display: 'flex', justifyContent: 'center', gap: '40px' }}>
                        <button onClick={() => setDb((prev) => prev.filter(v => v.id !== item.id))} style={{ width: '40px', height: '40px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaTimes /></button>
