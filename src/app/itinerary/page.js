@@ -433,36 +433,37 @@ export default function DestinationsPage() {
 
   /* --------- safe geolocation (GPS → IP → AU centre) ---------- */
 
+/* ----------------------- initial effects ----------------------- */
   useEffect(() => {
-    function detectLocation() {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude } = pos.coords;
-          setUserLocation({ lat: latitude, lon: longitude });
-        },
-        async () => {
-          try {
-            const res = await fetch("https://ipapi.co/json/");
-            const json = await res.json();
-            if (json.latitude && json.longitude) {
-              setUserLocation({ lat: json.latitude, lon: json.longitude });
-            } else {
-              throw new Error("No IP location data");
-            }
-          } catch {
-            setUserLocation({ lat: -25.2744, lon: 133.7751 }); // centre of AU
-          }
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 4000,
-          maximumAge: 5000,
-        }
-      );
+    // 1. Kiểm tra xem có địa điểm nào được gửi từ trang Chat không
+    const savedPlaces = localStorage.getItem("selectedPlacesForItinerary");
+    if (savedPlaces) {
+      console.log("Boss, nhận được danh sách từ Chat:", savedPlaces);
+      setPrompt(savedPlaces); // Tự động điền vào ô Destination
+      
+      // Xóa dữ liệu tạm để không bị lặp lại khi refresh
+      localStorage.removeItem("selectedPlacesForItinerary");
+      
+      // Nếu Boss muốn nó tự động chạy luôn khi vừa sang trang, 
+      // có thể gọi hàm handleBuild(savedPlaces) ở đây nếu có.
     }
 
+    // 2. Logic lấy vị trí hiện tại (giữ nguyên của Boss)
+    const detectLocation = async () => {
+      try {
+        const res = await fetch("https://ipapi.co/json/");
+        const data = await res.json();
+        if (data.city) {
+          // Chỉ set nếu chưa có dữ liệu từ Chat gửi sang
+          if (!savedPlaces) setPrompt(data.city);
+        }
+      } catch (err) {
+        console.error("Location detection failed", err);
+      }
+    };
+
     detectLocation();
-  }, []);
+  }, []); // Đảm bảo đóng ngoặc chuẩn xác ở đây
 
   /* ----------------------- fetch itinerary ----------------------- */
 
