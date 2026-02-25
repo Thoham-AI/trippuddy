@@ -17,7 +17,7 @@ export async function POST(req) {
 
     // 3. Khởi tạo AI với cơ chế bảo vệ
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
     const prompt = `Write a one-sentence catchy travel tip in English (max 15 words) for a tourist visiting "${placeName || 'this place'}" in "${location || 'this city'}". 
     Friendly vibe, start with 'Boss,'. No hashtags.`;

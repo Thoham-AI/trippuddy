@@ -11,14 +11,17 @@ export default function ChatPage() {
   ]);
   const [loading, setLoading] = useState(false);
   const [likedPlaces, setLikedPlaces] = useState([]);
+  
+  // Biến này để AI không bị nhầm Ninh Thuận sang Darwin
+  const [lastSearchCity, setLastSearchCity] = useState("");
 
-  // Hàm gửi tin nhắn/tìm địa điểm
   const handleSend = async (forcedText) => {
     const userMsg = forcedText || input.trim();
     if (!userMsg || loading) return;
 
     setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
+    setLastSearchCity(userMsg); // Lưu lại tên thành phố khách vừa gõ
     setInput("");
 
     try {
@@ -64,26 +67,28 @@ export default function ChatPage() {
     } finally { setLoading(false); }
   };
 
-  // Logic tạo Itinerary từ các địa điểm đã Like
-// Logic tạo Itinerary từ các địa điểm đã Like
+  // --- HÀM ON SWIPE QUAN TRỌNG (SỬA LỖI REFERENCE ERROR) ---
+  const onSwipe = (direction, item) => {
+    if (direction === 'right') {
+      setLikedPlaces((prev) => [...prev, item]);
+    }
+    setDb((prev) => prev.filter(v => v.id !== item.id));
+  };
+
+  // Logic tạo Itinerary gửi kèm Context Thành phố
   const makeItinerary = () => {
     if (likedPlaces.length === 0) return;
     
-    // Lưu danh sách tên các địa điểm vào localStorage để trang Itinerary có thể đọc được
-    const placeNames = likedPlaces.map(p => p.name).join(", ");
-    localStorage.setItem("selectedPlacesForItinerary", placeNames);
+    // Ép AI phải hiểu đây là địa điểm ở tỉnh nào để không nhầm sang Darwin
+    const placeNamesWithCity = likedPlaces.map(p => `${p.name} in ${lastSearchCity}`).join(", ");
     
-    // Thông báo cho Boss và chuyển hướng
-    setMessages(prev => [...prev, { role: "ai", content: `Got it Boss! Redirecting you to Build Trip to plan for: ${placeNames}...` }]);
+    localStorage.setItem("selectedPlacesForItinerary", placeNamesWithCity);
+    
+    setMessages(prev => [...prev, { role: "ai", content: `Got it Boss! Redirecting you to Build Trip for ${lastSearchCity}...` }]);
     
     setTimeout(() => {
-      window.location.href = "/itinerary"; // Dẫn Boss sang folder itinerary
+      window.location.href = "/itinerary";
     }, 1500);
-  };
-
-  const onSwipe = (direction, item) => {
-    if (direction === 'right') setLikedPlaces((prev) => [...prev, item]);
-    setDb((prev) => prev.filter(v => v.id !== item.id));
   };
 
   return (
@@ -107,8 +112,9 @@ export default function ChatPage() {
                       <p style={{ margin: '8px 0 0', fontSize: '12px', lineHeight: '1.4', color: '#e2e8f0', fontStyle: 'italic' }}>"{item.description}"</p>
                     </div>
                     <div style={{ position: 'absolute', bottom: '15px', width: '100%', display: 'flex', justifyContent: 'center', gap: '40px' }}>
-                       <button onClick={() => onSwipe('left', item)} style={{ width: '40px', height: '40px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#ef4444' }}><FaTimes /></button>
-                       <button onClick={() => onSwipe('right', item)} style={{ width: '40px', height: '40px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#22c55e' }}><FaHeart /></button>
+                       {/* NÚT BẤM GỌI HÀM ONSWIPE */}
+                       <button onClick={() => onSwipe('left', item)} style={{ width: '40px', height: '40px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaTimes /></button>
+                       <button onClick={() => onSwipe('right', item)} style={{ width: '40px', height: '40px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#22c55e', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaHeart /></button>
                     </div>
                   </div>
                 </TinderCard>
@@ -129,7 +135,6 @@ export default function ChatPage() {
               </div>
             ))}
             
-            {/* KẾT NỐI NÚT VÀO LOGIC TẠO LỊCH TRÌNH */}
             {likedPlaces.length > 0 && db.length === 0 && !loading && (
               <div style={{ alignSelf: 'center', marginTop: '10px' }}>
                 <button 
