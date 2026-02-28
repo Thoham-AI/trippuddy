@@ -6,25 +6,37 @@ export default function Chat({ onNewDestinations, likedPlaces = [], dislikedPlac
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [isSpeaking, setIsSpeaking] = useState(false) // Quản lý trạng thái đang đọc
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [autoReadNext, setAutoReadNext] = useState(false); // Cờ để biết có nên tự động đọc không
   const bottomRef = useRef(null)
 
   // --- HÀM ĐỌC VĂN BẢN (TEXT-TO-SPEECH) ---
   const speak = (text) => {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
-      // Hủy các câu đang đọc dở để tránh chồng chéo
       window.speechSynthesis.cancel();
-
       const utterance = new SpeechSynthesisUtterance(text);
+
+      const voices = window.speechSynthesis.getVoices();
+      const preferredVoice = voices.find(v => 
+        (v.lang === 'vi-VN' && v.name.includes('Natural')) || 
+        (v.lang === 'vi-VN' && v.name.includes('Google'))
+      );
+
+      if (preferredVoice) utterance.voice = preferredVoice;
+
+      utterance.pitch = 1.1;
+      utterance.rate = 0.95;
+
+      // Cập nhật trạng thái cho Layout.js nhận diện nút Stop
+      utterance.onstart = () => {
+        setIsSpeaking(true);
+        localStorage.setItem('ai_speaking', 'true');
+      };
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        localStorage.setItem('ai_speaking', 'false');
+      };
       
-      // Tự động nhận diện ngôn ngữ (Ưu tiên tiếng Việt cho Boss)
-      utterance.lang = 'vi-VN'; 
-      utterance.pitch = 1;
-      utterance.rate = 1;
-
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-
       window.speechSynthesis.speak(utterance);
     }
   };
@@ -32,8 +44,14 @@ export default function Chat({ onNewDestinations, likedPlaces = [], dislikedPlac
   async function sendMessage(e, voiceText, isFinal = false) {
     if (e) e.preventDefault()
     
-    // Dừng đọc ngay khi người dùng bắt đầu gửi câu hỏi mới
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      localStorage.setItem('ai_speaking', 'false');
+    }
+
+    // Kiểm tra xem tin nhắn đến từ Mic hay từ Input gõ tay
+    const isFromVoice = !!voiceText;
+    setAutoReadNext(isFromVoice); // Nếu là voiceText thì sẽ tự động đọc câu trả lời sau đó
 
     const textToSubmit = voiceText || input;
     const text = isFinal ? "Finalize my itinerary" : (textToSubmit || '').trim()
@@ -66,8 +84,10 @@ export default function Chat({ onNewDestinations, likedPlaces = [], dislikedPlac
       const newHistory = [...history, { role: 'assistant', content: aiReply }];
       setMessages(newHistory);
       
-      // --- AI TỰ ĐỘNG ĐỌC CÂU TRẢ LỜI ---
-      speak(aiReply);
+      // --- CHỈ TỰ ĐỘNG ĐỌC NẾU KHÁCH DÙNG MIC ---
+      if (isFromVoice) {
+        speak(aiReply);
+      }
 
       if (data.destinations?.length > 0 && typeof onNewDestinations === 'function') {
         onNewDestinations(data.destinations);
@@ -79,7 +99,6 @@ export default function Chat({ onNewDestinations, likedPlaces = [], dislikedPlac
     }
   }
 
-  // Tự động cuộn xuống cuối khi có tin nhắn mới
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -87,7 +106,6 @@ export default function Chat({ onNewDestinations, likedPlaces = [], dislikedPlac
   return (
     <div className="w-full flex flex-col h-full bg-white rounded-[30px] shadow-xl border border-gray-100 overflow-hidden">
       
-      {/* NỘI DUNG CHAT (SCROLLABLE) */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/50">
         {messages.length === 0 && (
           <div className="text-center mt-20 text-gray-400">
@@ -97,14 +115,25 @@ export default function Chat({ onNewDestinations, likedPlaces = [], dislikedPlac
         )}
 
         {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`p-4 rounded-2xl max-w-[85%] animate-in fade-in slide-in-from-bottom-2 ${
+          <div key={i} className={`flex items-end gap-2 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+            <div className={`p-4 rounded-2xl max-w-[80%] animate-in fade-in slide-in-from-bottom-2 ${
               msg.role === 'user' 
                 ? 'bg-[#10b981] text-white rounded-tr-none' 
                 : 'bg-white text-gray-800 shadow-sm border border-gray-100 rounded-tl-none'
             }`}>
               {msg.content}
             </div>
+
+            {/* NÚT LOA BÊN CẠNH TIN NHẮN AI */}
+            {msg.role === 'assistant' && (
+              <button 
+                onClick={() => speak(msg.content)}
+                className="mb-1 p-2 bg-white rounded-full shadow-sm border border-gray-100 hover:bg-gray-50 transition-colors text-gray-400 hover:text-blue-500"
+                title="Nghe câu trả lời"
+              >
+                🔊
+              </button>
+            )}
           </div>
         ))}
         
@@ -117,10 +146,8 @@ export default function Chat({ onNewDestinations, likedPlaces = [], dislikedPlac
         <div ref={bottomRef}></div>
       </div>
 
-      {/* THANH NHẬP LIỆU (ALWAYS VISIBLE AT BOTTOM) */}
       <form onSubmit={sendMessage} className="p-4 bg-white border-t flex items-center gap-3">
         <div className="flex-shrink-0 bg-gray-100 rounded-full p-1 hover:bg-gray-200 transition-colors">
-          {/* onResult gọi trực tiếp sendMessage để tự động gửi ngay khi nói xong */}
           <MicButton onResult={(t) => sendMessage(null, t)} />
         </div>
         
@@ -139,18 +166,6 @@ export default function Chat({ onNewDestinations, likedPlaces = [], dislikedPlac
         >
           {loading ? '...' : 'Gửi'}
         </button>
-
-        {/* Nút dừng đọc nhanh nếu AI đang nói quá dài */}
-        {isSpeaking && (
-          <button 
-            type="button"
-            onClick={() => window.speechSynthesis.cancel()}
-            className="p-2 text-red-500 hover:bg-red-50 rounded-full"
-            title="Dừng đọc"
-          >
-            Stop 🔇
-          </button>
-        )}
       </form>
     </div>
   )

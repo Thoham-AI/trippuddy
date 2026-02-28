@@ -99,14 +99,15 @@ export default function Home() {
             <input 
               type="text" placeholder="Where do you want to go?" 
               value={searchPrompt} onChange={(e) => setSearchPrompt(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch('/ai-assistant')}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch('/itinerary')}
               style={{ flex: 1, border: 'none', padding: '20px', fontSize: '18px', outline: 'none', textAlign: 'center', color: '#333' }}
             />
           </div>
           <div style={{ display: 'flex', gap: '15px', justifyContent: 'center' }}>
             <button onClick={() => handleSearch('/itinerary')} style={{ ...chatbotButtonStyle, backgroundColor: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(10px)', border: '1px solid white' }}>🚀 AI Instant Itinerary</button>
-            {/* Đã cập nhật Text để hiển thị đúng Custom Plan */}
-            <button onClick={() => handleSearch('/ai-assistant')} style={{ ...chatbotButtonStyle, backgroundColor: '#059669' }}>🎨 AI Custom Plan</button>
+            
+            {/* CẬP NHẬT: Nút AI Custom Plan dẫn đến /chat */}
+            <button onClick={() => router.push('/chat')} style={{ ...chatbotButtonStyle, backgroundColor: '#059669' }}>🎨 AI Custom Plan</button>
           </div>
         </div>
       </div>
@@ -150,7 +151,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* FLOATING CHAT BUBBLE - Đã cập nhật hiển thị chính xác AI Custom Plan */}
+      {/* FLOATING BUTTON: Đã đổi tên thành "Your AI assistant" và dẫn đến /ai-assistant */}
       <a 
         href="/ai-assistant" 
         style={{
@@ -162,13 +163,13 @@ export default function Home() {
         onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
         onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
       >
-        🎨
+        🤖
         <span style={{
           position: 'absolute', right: '75px', backgroundColor: 'white', padding: '8px 15px',
           borderRadius: '12px', fontSize: '13px', fontWeight: 'bold', color: '#333',
           whiteSpace: 'nowrap', boxShadow: '0 5px 15px rgba(0,0,0,0.1)'
         }}>
-          AI Custom Plan ✨
+          Your AI assistant ✨
         </span>
       </a>
 

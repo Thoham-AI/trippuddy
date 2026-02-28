@@ -60,6 +60,7 @@ Rules:
 - Always respond in ${lang}.
 - Address the user as "${title}" naturally in your reply (e.g., "Hi ${title}, ...", "Sure thing, ${title}.").
 - Be concise, friendly, and helpful about travel.
+- IMPORTANT FOR VOICE: Avoid using markdown symbols like asterisks (*) or hashtags (#). Use plain text sentences so the Text-to-Speech engine sounds natural.
 - If the user uses multiple languages, respond in the dominant one (${lang}).
 `;
 }
@@ -70,7 +71,6 @@ export async function POST(req) {
     const messages = body.messages ?? [];
     const lastMessage = messages[messages.length - 1]?.content || "";
 
-    // ✅ NEW: caller preference (Boss/Honey/etc)
     const userTitle = body.userTitle ?? body.title ?? "Boss";
 
     const lang = await detectLanguage(lastMessage);
@@ -87,10 +87,20 @@ export async function POST(req) {
       temperature: 0.5,
     });
 
-    const reply = completion.choices[0]?.message?.content || "";
+    let reply = completion.choices[0]?.message?.content || "";
+
+    // ✅ CẬP NHẬT: Làm sạch văn bản để trình duyệt đọc mượt hơn và nút Stop nhận diện tốt hơn
+    const cleanReply = reply
+      .replace(/[*_#`~]/g, '') // Xóa sạch ký tự Markdown
+      .replace(/\s+/g, ' ')    // Xóa khoảng trắng thừa
+      .trim();
 
     // ✅ NEW: include language (non-breaking for existing clients)
-    return NextResponse.json({ reply, language: lang });
+    return NextResponse.json({ 
+      reply: cleanReply, 
+      originalReply: reply, // Giữ lại bản gốc nếu cần hiển thị đẹp trên UI
+      language: lang 
+    });
   } catch (err) {
     console.error("CHAT ROUTE ERROR:", err);
     return NextResponse.json(
