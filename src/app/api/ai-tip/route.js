@@ -1,45 +1,45 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-export async function POST(req) {
+export async function POST(request) {
+  const { placeName, location } = await request.json();
+  const apiKey = process.env.GOOGLE_GENAI_API_KEY;
+
+  // 1. Danh sách Tip dự phòng (Phòng trường hợp mạng lag hoặc API chết)
+  const fallbacks = [
+    `Boss, ${placeName} is a must-visit spot in ${location}!`,
+    `Boss, you'll find amazing vibes and photo spots at ${placeName}.`,
+    `Boss, locals highly recommend checking out ${placeName}!`,
+    `Boss, the scenery at ${placeName} is absolutely breathtaking.`
+  ];
+  const fallbackTip = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+
   try {
-    // 1. Kiểm tra đầu vào
-    const body = await req.json().catch(() => ({}));
-    const { placeName, location, types } = body;
+    if (!apiKey) return NextResponse.json({ tip: fallbackTip });
 
-    const apiKey = process.env.GOOGLE_GENAI_API_KEY;
+    // 2. Dùng model gemini-pro (Dòng 1.0 cực kỳ ổn định, ít lỗi 404 hơn Flash)
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
 
-    // 2. Kiểm tra Key (In ra Terminal để Boss soi)
-    if (!apiKey) {
-      console.error("❌ ERROR: GOOGLE_GENAI_API_KEY is missing!");
-      return NextResponse.json({ tip: "Boss, your AI key is missing in .env.local!" });
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: `Give a 1-sentence travel tip for ${placeName} in ${location}. Start with "Boss, ..."` }] }]
+      })
+    });
+
+    const data = await response.json();
+
+    // Nếu vẫn lỗi 404 hoặc 400, trả về Tip dự phòng ngay lập tức
+    if (data.error || !data.candidates) {
+      console.warn("AI ROUTE: API Error, using fallback.");
+      return NextResponse.json({ tip: fallbackTip });
     }
 
-    // 3. Khởi tạo AI với cơ chế bảo vệ
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-
-    const prompt = `Write a one-sentence catchy travel tip in English (max 15 words) for a tourist visiting "${placeName || 'this place'}" in "${location || 'this city'}". 
-    Friendly vibe, start with 'Boss,'. No hashtags.`;
-
-    // 4. Gọi AI với Timeout/Error Handling
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    return NextResponse.json({ tip: text.trim() });
+    const tip = data.candidates[0].content.parts[0].text;
+    return NextResponse.json({ tip });
 
   } catch (error) {
-    // 5. TUYỆT ĐỐI KHÔNG TRẢ VỀ STATUS 500
-    // Thay vì chết, hãy trả về một câu mặc định để thẻ vẫn hiện đẹp
-    console.error("AI ROUTE LOG:", error.message);
-
-    // Kiểm tra các lỗi phổ biến
-    let fallbackMsg = "A wonderful spot for your next adventure, Boss!";
-    if (error.message.includes("fetch is not defined")) {
-      fallbackMsg = "Node.js version too old. Please update to v20+";
-    }
-
-    return NextResponse.json({ tip: fallbackMsg });
+    console.error("AI ROUTE FINAL FALLBACK:", error.message);
+    return NextResponse.json({ tip: fallbackTip });
   }
 }
