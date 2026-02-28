@@ -10,7 +10,6 @@ export default function Home() {
   const [searchPrompt, setSearchPrompt] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
 
-  // Dữ liệu điểm đến kèm thông tin bổ sung (thời tiết, guide)
   const pools = {
     vietnam: [
       { name: 'Phu Quoc', region: 'Vietnam', guide: 'https://vietnam.travel/destinations/phu-quoc', temp: '30°C', icon: '☀️' },
@@ -79,7 +78,6 @@ export default function Home() {
   return (
     <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh', fontFamily: 'sans-serif' }}>
       
-      {/* NAVBAR */}
       <nav style={{ display: 'flex', justifyContent: 'space-between', padding: '15px 5%', alignItems: 'center', backgroundColor: 'white', boxShadow: '0 2px 10px rgba(0,0,0,0.05)', position: 'sticky', top: 0, zIndex: 1000 }}>
         <div style={{ fontSize: '26px', fontWeight: '900', color: '#2563eb', letterSpacing: '-1px' }}>TripPuddy</div>
         <div style={{ display: 'flex', gap: '30px' }}>
@@ -89,7 +87,6 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* HERO SECTION */}
       <div style={{ 
         backgroundImage: `linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.6)), url('${heroImage}')`, 
         backgroundSize: 'cover', backgroundPosition: 'center', height: '85vh', 
@@ -108,13 +105,12 @@ export default function Home() {
           </div>
           <div style={{ display: 'flex', gap: '15px', justifyContent: 'center' }}>
             <button onClick={() => handleSearch('/itinerary')} style={{ ...chatbotButtonStyle, backgroundColor: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(10px)', border: '1px solid white' }}>🚀 AI Instant Itinerary</button>
-            {/* Cập nhật trỏ về /ai-assistant */}
+            {/* Đã cập nhật Text để hiển thị đúng Custom Plan */}
             <button onClick={() => handleSearch('/ai-assistant')} style={{ ...chatbotButtonStyle, backgroundColor: '#059669' }}>🎨 AI Custom Plan</button>
           </div>
         </div>
       </div>
 
-      {/* FEATURED DESTINATIONS */}
       <section style={{ padding: '80px 5%', maxWidth: '1400px', margin: '0 auto' }}>
         <h2 style={{ fontSize: '2.5rem', marginBottom: '50px', textAlign: 'center', fontWeight: '900' }}>Featured Destinations</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '30px' }}>
@@ -154,7 +150,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* FLOATING CHAT BUBBLE - Đã cập nhật trỏ tới /ai-assistant */}
+      {/* FLOATING CHAT BUBBLE - Đã cập nhật hiển thị chính xác AI Custom Plan */}
       <a 
         href="/ai-assistant" 
         style={{
@@ -166,17 +162,16 @@ export default function Home() {
         onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
         onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
       >
-        💬
+        🎨
         <span style={{
           position: 'absolute', right: '75px', backgroundColor: 'white', padding: '8px 15px',
           borderRadius: '12px', fontSize: '13px', fontWeight: 'bold', color: '#333',
           whiteSpace: 'nowrap', boxShadow: '0 5px 15px rgba(0,0,0,0.1)'
         }}>
-          Chat with AI ✨
+          AI Custom Plan ✨
         </span>
       </a>
 
-      {/* MODAL ẢNH */}
       {selectedImage && (
         <div onClick={() => setSelectedImage(null)} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 4000, display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'zoom-out' }}>
           <img src={selectedImage} style={{ maxWidth: '90%', maxHeight: '90%', borderRadius: '15px', border: '5px solid white' }} alt="Selected" />
