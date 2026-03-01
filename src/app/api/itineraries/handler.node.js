@@ -101,15 +101,7 @@ async function reverseGeocodeCity(lat, lon) {
   }
 
   const addr = data?.address || {};
-  return (
-    addr.city ||
-    addr.town ||
-    addr.suburb ||
-    addr.village ||
-    addr.municipality ||
-    addr.county ||
-    ""
-  );
+  return "";
 }
 
 /* ---------------------------------------------------------------
@@ -631,7 +623,7 @@ export async function handleItineraryRequest(input) {
     const destinationHint = extractDestinationHint(userPrompt);
 
     const userCity = await reverseGeocodeCity(userLocation?.lat, userLocation?.lon);
-    const tripCity = destinationHint || userCity || "";
+    const tripCity = "";
 
     const requireBreakfast = cityMatches(userCity, tripCity);
 

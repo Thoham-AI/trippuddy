@@ -11,35 +11,47 @@ export default function Chat({ onNewDestinations, likedPlaces = [], dislikedPlac
   const bottomRef = useRef(null)
 
   // --- HÀM ĐỌC VĂN BẢN (TEXT-TO-SPEECH) ---
-  const speak = (text) => {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
+// --- HÀM ĐỌC VĂN BẢN (GIỌNG NỮ ÚC 🇦🇺) ---
+const speak = (text) => {
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
 
-      const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(v => 
-        (v.lang === 'vi-VN' && v.name.includes('Natural')) || 
-        (v.lang === 'vi-VN' && v.name.includes('Google'))
-      );
+    const voices = window.speechSynthesis.getVoices();
 
-      if (preferredVoice) utterance.voice = preferredVoice;
+    // CHIẾN THUẬT ÉP GIỌNG NỮ ÚC:
+    // 1. Lọc tất cả giọng ÚC (en-AU)
+    // 2. Loại bỏ các giọng có chữ "Male", "David", "Liam", "James" (các tên nam phổ biến)
+    // 3. Ưu tiên các tên nữ: "Karen", "Catherine", "Martha", "Natural", "Female"
+    const ausFemaleVoice = voices.find(v => 
+      v.lang.startsWith('en-AU') && 
+      (v.name.includes('Karen') || v.name.includes('Catherine') || v.name.includes('Female') || v.name.includes('Natural')) &&
+      !v.name.toLowerCase().includes('male') // Loại trừ thẳng tay nếu có chữ Male
+    ) || voices.find(v => 
+      v.lang.startsWith('en-AU') && !v.name.toLowerCase().includes('male')
+    );
 
-      utterance.pitch = 1.1;
-      utterance.rate = 0.95;
-
-      // Cập nhật trạng thái cho Layout.js nhận diện nút Stop
-      utterance.onstart = () => {
-        setIsSpeaking(true);
-        localStorage.setItem('ai_speaking', 'true');
-      };
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        localStorage.setItem('ai_speaking', 'false');
-      };
-      
-      window.speechSynthesis.speak(utterance);
+    if (ausFemaleVoice) {
+      utterance.voice = ausFemaleVoice;
+      console.log("Selected Voice:", ausFemaleVoice.name); // Boss có thể check F12 để xem nó chọn giọng nào
     }
-  };
+
+    utterance.lang = 'en-AU';
+    utterance.pitch = 1.1; // Tăng pitch lên một chút để giọng thanh và nữ tính hơn
+    utterance.rate = 0.9;
+
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      localStorage.setItem('ai_speaking', 'true');
+    };
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      localStorage.setItem('ai_speaking', 'false');
+    };
+    
+    window.speechSynthesis.speak(utterance);
+  }
+};
 
   async function sendMessage(e, voiceText, isFinal = false) {
     if (e) e.preventDefault()

@@ -453,10 +453,6 @@ export default function DestinationsPage() {
       try {
         const res = await fetch("https://ipapi.co/json/");
         const data = await res.json();
-        if (data.city) {
-          // Chỉ set nếu chưa có dữ liệu từ Chat gửi sang
-          if (!savedPlaces) setPrompt(data.city);
-        }
       } catch (err) {
         console.error("Location detection failed", err);
       }
