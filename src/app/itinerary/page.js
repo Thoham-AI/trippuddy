@@ -434,50 +434,34 @@ export default function DestinationsPage() {
   /* --------- safe geolocation (GPS → IP → AU centre) ---------- */
 
 /* ----------------------- initial effects ----------------------- */
+ /* ----------------------- initial effects ----------------------- */
   useEffect(() => {
     // 1. Kiểm tra xem có địa điểm nào được gửi từ trang Chat không
     const savedPlaces = localStorage.getItem("selectedPlacesForItinerary");
     if (savedPlaces) {
       console.log("Boss, nhận được danh sách từ Chat:", savedPlaces);
-      setPrompt(savedPlaces); // Tự động điền vào ô Destination
-      
-      // Xóa dữ liệu tạm để không bị lặp lại khi refresh
+      setPrompt(savedPlaces);
       localStorage.removeItem("selectedPlacesForItinerary");
-      
-      // Nếu Boss muốn nó tự động chạy luôn khi vừa sang trang, 
-      // có thể gọi hàm handleBuild(savedPlaces) ở đây nếu có.
     }
-
-    // 2. Logic lấy vị trí hiện tại (giữ nguyên của Boss)
-    const detectLocation = async () => {
-      try {
-        const res = await fetch("https://ipapi.co/json/");
-        const data = await res.json();
-      } catch (err) {
-        console.error("Location detection failed", err);
-      }
-    };
-
-    detectLocation();
-  }, []); // Đảm bảo đóng ngoặc chuẩn xác ở đây
+    // Đã xóa detectLocation ở đây để không bị lỗi vị trí Darwin
+  }, []); 
 
   /* ----------------------- fetch itinerary ----------------------- */
 
-  const generate = async () => {
-    if (!prompt.trim()) return;
-
-    setLoading(true);
-    try {
-      const { lat, lon } = userLocation || { lat: null, lon: null };
-
-      const res = await fetch("/api/itineraries", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userPrompt: prompt,
-          userLocation: { lat, lon },
-        }),
-      });
+// Tìm đến hàm generate trong page.js
+const generate = async () => {
+  if (!prompt.trim()) return;
+  setLoading(true);
+  try {
+    const res = await fetch("/api/itineraries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userPrompt: prompt,
+        userLocation: null, // BẮT BUỘC là null ở đây
+      }),
+    });
+    // ... các đoạn sau giữ nguyên
 
       if (!res.ok) {
         setLoading(false);
