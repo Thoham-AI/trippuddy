@@ -57,6 +57,14 @@ const toRad = (d) => (d * Math.PI) / 180;
 
 const distKm = (a, b) => {
   if (!a || !b) return 0;
+  if (
+    typeof a.lat !== "number" ||
+    typeof a.lon !== "number" ||
+    typeof b.lat !== "number" ||
+    typeof b.lon !== "number"
+  )
+    return 0;
+
   const dLat = toRad(b.lat - a.lat);
   const dLon = toRad(b.lon - a.lon);
   const s =
@@ -76,8 +84,7 @@ const minutesToStr = (mins, mode) =>
 const fallbackMinutes = (dKm, mode) =>
   mode === "walk" ? (dKm / 4) * 60 : (dKm / 30) * 60 + 3;
 
-/* ----------------------- ✅ FIX: robust time sorting helpers ----------------------- */
-/* Inserted here (right after fallbackMinutes) */
+/* ----------------------- time sorting helpers ----------------------- */
 
 function normalizeTimeToMinutes(act) {
   const raw =
@@ -136,160 +143,125 @@ function sortActivitiesByTime(activities) {
     .map((x) => x.a);
 }
 
+function normalizeLooseText(s) {
+  return String(s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function extractTripCityFromPrompt(prompt) {
+  const text = String(prompt || "").trim();
+  if (!text) return "";
+
+  const plain = normalizeLooseText(text);
+  const knownLocations = [
+    ["flinders ranges", "Flinders Ranges"],
+    ["flinders range", "Flinders Ranges"],
+    ["nam dinh", "Nam Dinh"],
+    ["ninh binh", "Ninh Binh"],
+    ["hanoi", "Hanoi"],
+    ["ha noi", "Hanoi"],
+    ["ho chi minh", "Ho Chi Minh City"],
+    ["saigon", "Ho Chi Minh City"],
+    ["da nang", "Da Nang"],
+    ["danang", "Da Nang"],
+    ["hoi an", "Hoi An"],
+  ];
+
+  for (const [needle, city] of knownLocations) {
+    if (plain.includes(needle)) return city;
+  }
+
+  const patterns = [
+    /\b(?:in|to|at|visit|around)\s+([\p{L}][\p{L}\s'’-]{1,60})(?:[,.]|$)/iu,
+    /^\s*\d+\s+days?(?:\s+in)?\s+([\p{L}][\p{L}\s'’-]{1,60})(?:[,.]|$|\s+)/iu,
+    /\b(?:o|ở|tai|tại|den|đến|di|đi)\s+([\p{L}][\p{L}\s'’-]{1,60})(?:[,.]|$)/iu,
+    /^\s*\d+\s+ngay\s+(?:o|ở|tai|tại)\s+([\p{L}][\p{L}\s'’-]{1,60})(?:[,.]|$|\s+)/iu,
+  ];
+
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m?.[1]) return m[1].trim();
+  }
+
+  return "";
+}
+
 /* ----------------------- routing via ORS ----------------------- */
 
+// ĐẢM BẢO ĐOẠN NÀY KHÔNG NẰM TRONG BẤT KỲ CẶP NGOẶC NHỌN { } CỦA HÀM KHÁC
 async function fetchRoute(prev, next) {
-  if (!prev || !next) {
-    return { mode: "walk", label: null, minutes: 0, coords: [], steps: [] };
-  }
-
-  const dKm = distKm(prev, next);
-  const mode = modeFor(dKm);
-  const key = process.env.NEXT_PUBLIC_ORS_KEY;
-
-  // If no key → fallback estimate & straight line
-  if (!key) {
-    const mins = fallbackMinutes(dKm, mode);
-    return {
-      mode,
-      label: minutesToStr(mins, mode),
-      minutes: Math.round(mins),
-      coords: [
-        [prev.lat, prev.lon],
-        [next.lat, next.lon],
-      ],
-      steps: [],
-    };
-  }
+  if (!prev?.lat || !prev?.lon || !next?.lat || !next?.lon) return fallback();
 
   try {
-    const profile = mode === "walk" ? "foot-walking" : "driving-car";
-    const res = await fetch(
-      `https://api.openrouteservice.org/v2/directions/${profile}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-          coordinates: [
-            [prev.lon, prev.lat],
-            [next.lon, next.lat],
-          ],
-          instructions: true,
-          units: "km",
-          geometry: true,
-          geometry_format: "geojson",
-        }),
-      }
-    );
+    const profile = modeFor(distKm(prev, next)) === "walk" ? "foot-walking" : "driving-car";
+    
+    // Gọi đến Proxy của chính mình thay vì gọi trực tiếp ra ngoài
+    const res = await fetch("/api/route-proxy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profile,
+        coordinates: [[Number(prev.lon), Number(prev.lat)], [Number(next.lon), Number(next.lat)]]
+      }),
+    });
 
-    if (!res.ok) {
-      const mins = fallbackMinutes(dKm, mode);
-      return {
-        mode,
-        label: minutesToStr(mins, mode),
-        minutes: Math.round(mins),
-        coords: [
-          [prev.lat, prev.lon],
-          [next.lat, next.lon],
-        ],
-        steps: [],
-      };
-    }
-
-    let json;
-    try {
-      json = await res.json();
-    } catch {
-      const mins = fallbackMinutes(dKm, mode);
-      return {
-        mode,
-        label: minutesToStr(mins, mode),
-        minutes: Math.round(mins),
-        coords: [
-          [prev.lat, prev.lon],
-          [next.lat, next.lon],
-        ],
-        steps: [],
-      };
-    }
-
+    const json = await res.json();
     const feat = json?.features?.[0];
-    const secs = feat?.properties?.summary?.duration || 0;
-    const coordsLonLat = feat?.geometry?.coordinates || [];
-    const steps =
-      feat?.properties?.segments?.[0]?.steps?.map((s) => ({
-        instruction: s.instruction,
-        distance_m: s.distance,
-        duration_s: s.duration,
-        name: s.name,
-      })) || [];
-
-    const coords = coordsLonLat.map(([lon, lat]) => [lat, lon]); // [lat, lon]
-    const mins = secs ? secs / 60 : fallbackMinutes(dKm, mode);
 
     return {
-      mode,
-      label: minutesToStr(mins, mode),
-      minutes: Math.round(mins),
-      coords,
-      steps,
+      mode: profile === "foot-walking" ? "walk" : "drive",
+      coords: feat?.geometry?.coordinates.map(([lon, lat]) => [lat, lon]) || [], // Đảo ngược để khớp Leaflet
+      // ... các field khác giữ nguyên
     };
-  } catch {
-    const mins = fallbackMinutes(dKm, mode);
-    return {
-      mode,
-      label: minutesToStr(mins, mode),
-      minutes: Math.round(mins),
-      coords: [
-        [prev.lat, prev.lon],
-        [next.lat, next.lon],
-      ],
-      steps: [],
-    };
+  } catch (err) {
+    return fallback();
   }
 }
 
 /* Build adjacent routes in a day & aggregate totals. */
-async function buildRoutesAndTotals(activities, mutateTravelTime = true) {
+/* --- ĐÃ SỬA: Gọi fetchRoute để lấy tọa độ thật từ ORS --- */
+async function buildRoutesAndTotals(activities) {
   const segments = [];
   let totalKm = 0;
-  let walkMin = 0;
-  let driveMin = 0;
+  let totalMin = 0;
+
+  if (!Array.isArray(activities) || activities.length < 2) {
+    return { segments, totals: { totalKm: 0, totalMin: 0 } };
+  }
 
   for (let i = 1; i < activities.length; i++) {
-    const A = activities[i - 1]?.coordinates;
-    const B = activities[i]?.coordinates;
-    if (!A || !B) {
-      segments.push(null);
-      continue;
+    const prev = activities[i - 1]?.coordinates;
+    const next = activities[i]?.coordinates;
+    
+    if (prev && next) {
+      // GỌI API THẬT Ở ĐÂY
+      const routeData = await fetchRoute(prev, next); 
+      
+      // Cộng dồn tổng thời gian/quãng đường
+      totalMin += routeData.minutes;
+      const d = distKm(prev, next);
+      totalKm += d;
+
+      // Lưu segments để vẽ Polyline trên Map
+      segments.push({
+        mode: routeData.mode,
+        latlngs: routeData.coords, // Tọa độ thật để vẽ đường cong trên bản đồ
+        label: routeData.label,
+      });
+
+      // Cập nhật nhãn hiển thị cho ActivityCard
+      activities[i].travelLabel = routeData.label;
+      activities[i].travelMode = routeData.mode;
     }
-
-    const dKm = distKm(A, B);
-    totalKm += dKm;
-
-    const route = await fetchRoute(A, B);
-    if (mutateTravelTime) activities[i].travelTime = route.label;
-
-    if (route.mode === "walk") walkMin += route.minutes;
-    else driveMin += route.minutes;
-
-    segments.push({
-      mode: route.mode,
-      latlngs: route.coords,
-      steps: route.steps,
-    });
   }
 
   return {
     segments,
     totals: {
       totalKm: Number(totalKm.toFixed(1)),
-      walkMin,
-      driveMin,
-      totalMin: walkMin + driveMin,
+      totalMin: Math.round(totalMin),
     },
   };
 }
@@ -346,6 +318,7 @@ function mixedOptimizeActivities(activities) {
       .map((a) => a.coordinates)
       .filter(Boolean)
       .map((c) => [c.lat, c.lon]);
+    if (!pts.length) return { lat: 0, lon: 0 };
     const lat = pts.reduce((s, p) => s + p[0], 0) / pts.length;
     const lon = pts.reduce((s, p) => s + p[1], 0) / pts.length;
     return { lat, lon };
@@ -383,23 +356,7 @@ export default function DestinationsPage() {
     const nums = (str.match(/\d+(\.\d+)?/g) || []).map(Number);
     if (!nums.length) return 0;
     if (nums.length === 1) return nums[0];
-    const avg = (nums[0] + nums[1]) / 2;
-    return avg;
-  };
-
-  const computeBudget = () => {
-    if (!Array.isArray(data.itinerary)) return null;
-
-    const perDay = data.itinerary.map((d) => {
-      const total = (d.activities || []).reduce(
-        (sum, a) => sum + parseCost(a.cost_estimate),
-        0
-      );
-      return { day: d.day, total };
-    });
-
-    const total = perDay.reduce((s, d) => s + d.total, 0);
-    return { perDay, total };
+    return (nums[0] + nums[1]) / 2;
   };
 
   const [showTripMap, setShowTripMap] = useState(false);
@@ -408,9 +365,6 @@ export default function DestinationsPage() {
   const [budgetBreakdown, setBudgetBreakdown] = useState(null);
   const [modalTitle, setModalTitle] = useState("");
   const [modalText, setModalText] = useState("");
-
-  // for save/load
-  const STORAGE_KEY = "trippuddy_itinerary_v1";
 
   // UI state
   const [prompt, setPrompt] = useState("");
@@ -433,238 +387,60 @@ export default function DestinationsPage() {
 
   /* --------- safe geolocation (GPS → IP → AU centre) ---------- */
 
-/* ----------------------- initial effects ----------------------- */
- /* ----------------------- initial effects ----------------------- */
   useEffect(() => {
-    // 1. Kiểm tra xem có địa điểm nào được gửi từ trang Chat không
-    const savedPlaces = localStorage.getItem("selectedPlacesForItinerary");
-    if (savedPlaces) {
-      console.log("Boss, nhận được danh sách từ Chat:", savedPlaces);
-      setPrompt(savedPlaces);
-      localStorage.removeItem("selectedPlacesForItinerary");
-    }
-    // Đã xóa detectLocation ở đây để không bị lỗi vị trí Darwin
-  }, []); 
-
-  /* ----------------------- fetch itinerary ----------------------- */
-
-// Tìm đến hàm generate trong page.js
-const generate = async () => {
-  if (!prompt.trim()) return;
-  setLoading(true);
-  try {
-    const res = await fetch("/api/itineraries", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userPrompt: prompt,
-        userLocation: null, // BẮT BUỘC là null ở đây
-      }),
-    });
-    // ... các đoạn sau giữ nguyên
-
-      if (!res.ok) {
-        setLoading(false);
-        alert("Server error: itinerary generation failed.");
-        return;
-      }
-
-      const json = await res.json();
-
-      // ---- helpers: map activities to your UI shape (keep existing fields) ----
-      const mapModernActivity = (a) => ({
-        time: a.arrival_time || a.time_of_day || a.time || "Flexible",
-        arrival_time: a.arrival_time || null,
-        durationMinutes: a.duration_minutes || null,
-        departure_time: a.suggested_departure_time || null,
-        distanceFromPreviousKm: a.distance_km_from_previous ?? null,
-        travelTimeFromPreviousMinutes: a.travel_time_minutes_from_previous ?? null,
-
-        title: a.title || "Activity",
-        details: a.description || "",
-        cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
-
-        coordinates:
-          a.coordinates ||
-          (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null),
-
-        location: { name: a.title, country: "AU" },
-
-        image: a.image || null,
-
-        // ✅ IMPORTANT: carry link fields so Website/Map works reliably
-        website: a.website || null,
-        mapsUrl: a.mapsUrl || null,
-        link: a.website || a.mapsUrl || a.link || null,
-
-        weather: json.weather || null,
-        weatherTemp: json.weather?.main?.temp ?? null,
-        weatherDesc: json.weather?.weather?.[0]?.description ?? null,
-        weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
-        weatherLink: json.weather?.id
-          ? `https://openweathermap.org/city/${json.weather.id}`
-          : null,
-
-        travelTime: null,
-      });
-
-      const mapArrayBackendActivity = (a) => ({
-        time: a.time || "Flexible",
-        arrival_time: a.arrival_time || null,
-        time_of_day: a.time_of_day || null,
-
-        title: a.title || a.placeName || "Activity",
-        details: a.details || a.description || "",
-        cost_estimate:
-          a.cost_estimate ||
-          (a.approxCostAUD ? `Approx ${a.approxCostAUD} AUD` : ""),
-        coordinates:
-          a.coordinates ||
-          a.coords ||
-          (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null),
-        location: a.location || {},
-        image: a.image || null,
-
-        // ✅ carry link fields
-        website: a.website || null,
-        mapsUrl: a.mapsUrl || null,
-        link: a.website || a.mapsUrl || a.link || null,
-
-        weather: a.weather || null,
-        travelTime: a.travelTime ?? null,
-      });
-
-      // ---- build itinerary days correctly (keep your existing logic) ----
-      let newItinerary = [];
-
-      if (Array.isArray(json.itinerary) && json.itinerary.length > 0) {
-        const looksLikeDays = json.itinerary.some((d) => Array.isArray(d?.activities));
-
-        if (looksLikeDays) {
-          newItinerary = json.itinerary.map((d, idx) => ({
-            day: d.day ?? idx + 1,
-            activities: (d.activities || []).map(mapArrayBackendActivity),
-          }));
-        } else {
-          const apiActivities = json.itinerary[0]?.activities || [];
-          newItinerary = [
-            { day: 1, activities: apiActivities.map(mapArrayBackendActivity) },
-          ];
+    function detectLocation() {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          setUserLocation({ lat: latitude, lon: longitude });
+        },
+        async () => {
+          try {
+            const res = await fetch("https://ipapi.co/json/");
+            const json = await res.json();
+            if (json.latitude && json.longitude) {
+              setUserLocation({ lat: json.latitude, lon: json.longitude });
+            } else {
+              throw new Error("No IP location data");
+            }
+          } catch {
+            setUserLocation({ lat: -25.2744, lon: 133.7751 }); // centre of AU
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 4000,
+          maximumAge: 5000,
         }
-      } else if (Array.isArray(json.itinerary?.days)) {
-        newItinerary = json.itinerary.days.map((d, idx) => ({
-          day: d.day ?? idx + 1,
-          activities: (d.activities || []).map(mapModernActivity),
-        }));
-      } else if (json.itinerary?.itinerary?.activities) {
-        const apiActivities = json.itinerary.itinerary.activities;
-        const activities = apiActivities.map((a) => ({
-          time: a.time || "Flexible",
-          arrival_time: a.arrival_time || null,
-          time_of_day: a.time_of_day || null,
-
-          title: a.title || "Activity",
-          details: a.description || "",
-          cost_estimate: a.estimated_cost ? `Approx ${a.estimated_cost} AUD` : "",
-          coordinates:
-            a.coordinates ||
-            (a.latitude && a.longitude ? { lat: a.latitude, lon: a.longitude } : null),
-          location: { name: a.title, country: "AU" },
-          image: a.image || null,
-
-          website: a.website || null,
-          mapsUrl: a.mapsUrl || null,
-          link: a.website || a.mapsUrl || a.link || null,
-
-          weather: json.weather || null,
-          weatherTemp: json.weather?.main?.temp ?? null,
-          weatherDesc: json.weather?.weather?.[0]?.description ?? null,
-          weatherIcon: json.weather?.weather?.[0]?.icon ?? null,
-          travelTime: null,
-        }));
-        newItinerary = [{ day: 1, activities }];
-      } else {
-        const slots = json.itinerary?.slots || json.slots || [];
-        const activities = slots.map((slot) => ({
-          time: slot.time || "Flexible",
-          arrival_time: slot.arrival_time || null,
-          time_of_day: slot.time_of_day || null,
-
-          title: slot.placeName || slot.title || "Activity",
-          details: slot.description || "",
-          cost_estimate: slot.approxCostAUD ? `Approx ${slot.approxCostAUD} AUD` : "",
-          coordinates: slot.coordinates || null,
-          location: slot.location || {},
-          image: slot.image || null,
-
-          website: slot.website || null,
-          mapsUrl: slot.mapsUrl || null,
-          link: slot.website || slot.mapsUrl || slot.link || null,
-
-          weather: slot.weather || null,
-          travelTime: null,
-        }));
-        newItinerary = [{ day: 1, activities }];
-      }
-
-      /* ----------------------- ✅ FIX: enforce chronological order (once) ----------------------- */
-      for (const day of newItinerary) {
-        day.activities = sortActivitiesByTime(day.activities || []);
-      }
-
-      // recompute travel times
-      for (const day of newItinerary) {
-        const acts = day.activities || [];
-        const tasks = acts.map(async (a, i) => {
-          if (i === 0) {
-            a.travelTime = null;
-            return;
-          }
-          const prev = acts[i - 1]?.coordinates;
-          const cur = a.coordinates;
-          if (!prev || !cur) {
-            a.travelTime = null;
-            return;
-          }
-          const route = await fetchRoute(prev, cur);
-          a.travelTime = route.label;
-        });
-        await Promise.all(tasks);
-      }
-
-      setData({ itinerary: newItinerary });
-      setActiveDay(0);
-      setShowRouteMap(false);
-
-      await recomputeAll(newItinerary);
-
-      setTimeout(() => inputRef.current?.focus(), 50);
-    } catch (err) {
-      console.error("Generate error:", err);
-      alert("Network error. Please try again.");
-    } finally {
-      setLoading(false);
+      );
     }
-  };
+
+    detectLocation();
+  }, []);
 
   /* ----------------------- recompute helpers ----------------------- */
 
   const recomputeDay = async (idx, itinerary) => {
-    const day = itinerary[idx];
+    const day = itinerary?.[idx];
     const acts = Array.isArray(day?.activities) ? day.activities : [];
     if (!acts.length) {
-      setRoutesByDay((prev) => ({ ...prev, [idx]: { segments: [], totals: null } }));
+      setRoutesByDay((prev) => ({
+        ...prev,
+        [idx]: { segments: [], totals: null },
+      }));
       setSavingsByDay((prev) => ({ ...prev, [idx]: 0 }));
       return;
     }
 
-    const bundle = await buildRoutesAndTotals(acts);
+    const bundle = await buildRoutesAndTotals(acts, true);
     setRoutesByDay((prev) => ({ ...prev, [idx]: bundle }));
 
-    // compute “savings if optimized”
     const optimized = mixedOptimizeActivities(acts);
     const currentTotals = bundle.totals;
+
+    // IMPORTANT: do NOT mutate travelTime when comparing
     const optBundle = await buildRoutesAndTotals([...optimized], false);
+
     const saved = Math.max(
       0,
       (currentTotals.totalMin || 0) - (optBundle.totals.totalMin || 0)
@@ -672,8 +448,207 @@ const generate = async () => {
     setSavingsByDay((prev) => ({ ...prev, [idx]: saved }));
   };
 
-  const recomputeAll = async (it) => {
-    for (let i = 0; i < it.length; i++) await recomputeDay(i, it);
+const recomputeAll = async (it) => {
+    const arr = Array.isArray(it) ? it : (it?.itinerary || []);
+    console.log("🚀 Bắt đầu tính toán lộ trình cho", arr.length, "ngày...");
+
+    setRoutesByDay({});
+    setSavingsByDay({});
+
+    for (let i = 0; i < arr.length; i++) {
+      try {
+        await recomputeDay(i, arr);
+        console.log(`✅ Đã tính xong lộ trình ngày ${i + 1}`);
+      } catch (error) {
+        console.error(`❌ Lỗi tại ngày ${i + 1}:`, error);
+      }
+    }
+
+    setData(prev => ({ ...prev, itinerary: [...arr] }));
+    console.log("🏁 Hoàn tất recomputeAll.");
+  };
+
+  /* ----------------------- robust itinerary extraction ----------------------- */
+
+  const extractDaysFromResponse = (json) => {
+    // Try a lot of shapes (this is what your old file effectively did) :contentReference[oaicite:1]{index=1}
+    const candidates = [
+      json?.itinerary,
+      json?.data?.itinerary,
+      json?.result?.itinerary,
+      json?.itinerary?.days,
+      json?.itinerary?.itinerary, // sometimes nested
+      json?.plan,
+      json?.days,
+    ];
+
+    for (const c of candidates) {
+      if (Array.isArray(c)) return c;
+      // object keyed by day: { day1: {...}, day2: {...} }
+      if (c && typeof c === "object") {
+        const vals = Object.values(c);
+        if (vals.some((v) => v && Array.isArray(v.activities))) return vals;
+      }
+    }
+
+    // sometimes: { itinerary: { activities: [...] } } or { activities: [...] }
+    const acts =
+      json?.itinerary?.activities ||
+      json?.itinerary?.itinerary?.activities ||
+      json?.activities ||
+      json?.data?.activities;
+
+    if (Array.isArray(acts)) return [{ day: 1, activities: acts }];
+
+    return [];
+  };
+
+  const normalizeActivity = (a, defaultLocationName) => {
+    const coords =
+      a?.coordinates ||
+      a?.coords ||
+      (typeof a?.latitude === "number" && typeof a?.longitude === "number"
+        ? { lat: a.latitude, lon: a.longitude }
+        : null);
+
+    const loc =
+      typeof a?.location === "object" && a.location !== null
+        ? a.location
+        : {
+            name:
+              typeof a?.location === "string" && a.location.trim()
+                ? a.location.trim()
+                : defaultLocationName,
+            city: "",
+            country: "",
+          };
+
+    const title = a?.title || a?.activity || a?.placeName || "Activity";
+
+    // Preserve whatever link fields backend provides (older/newer)
+    const website = a?.website || a?.url || null;
+    const mapsUrl = a?.mapsUrl || a?.mapUrl || a?.googleMapsUrl || null;
+    const link = a?.link || website || mapsUrl || null;
+
+    return {
+      ...a,
+      id: a?.id || Math.random().toString(36).slice(2, 10),
+      time:
+        a?.time ||
+        a?.arrival_time ||
+        a?.time_of_day ||
+        a?.departure_time ||
+        "Flexible",
+      arrival_time: a?.arrival_time || null,
+      time_of_day: a?.time_of_day || null,
+      departure_time: a?.departure_time || a?.suggested_departure_time || null,
+
+      title,
+      activity: a?.activity || title,
+      details: a?.details || a?.description || "",
+
+      cost_estimate:
+        a?.cost_estimate ||
+        (a?.estimated_cost ? `Approx ${a.estimated_cost}` : ""),
+
+      coordinates: coords,
+      location: loc,
+
+      image: a?.image || null,
+
+      website,
+      mapsUrl,
+      link,
+
+      // travelTime will be computed later
+      travelTime: a?.travelTime ?? null,
+    };
+  };
+
+  /* ----------------------- fetch itinerary ----------------------- */
+
+  const generate = async () => {
+    if (!prompt.trim()) return;
+
+    setLoading(true);
+    try {
+      const { lat, lon } = userLocation || { lat: null, lon: null };
+      const tripCity = extractTripCityFromPrompt(prompt);
+
+      setRoutesByDay({});
+      setSavingsByDay({});
+      setData({ itinerary: [] });
+
+      const res = await fetch("/api/itineraries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userPrompt: prompt,
+          tripCity,
+          userLocation: { lat, lon },
+        }),
+      });
+
+      // IMPORTANT: backend might return text or json
+      const rawText = await res.text();
+      let json;
+      try {
+        json = JSON.parse(rawText);
+      } catch {
+        // try extract JSON blob inside text
+        const m = rawText.match(/\{[\s\S]*\}/);
+        if (!m) throw new Error("Server did not return valid JSON.");
+        json = JSON.parse(m[0]);
+      }
+
+      const daysRaw = extractDaysFromResponse(json);
+
+      if (!Array.isArray(daysRaw) || daysRaw.length === 0) {
+        console.error("Itinerary response shape not recognized:", json);
+        alert(
+          "AI không tạo được lịch trình. Boss thử nhập yêu cầu cụ thể hơn nhé!"
+        );
+        return;
+      }
+
+      const defaultLocationName =
+        extractTripCityFromPrompt(prompt) || String(prompt.split(",")[0] || "").trim();
+
+      const newItinerary = daysRaw.map((d, idx) => {
+        const activitiesRaw = Array.isArray(d?.activities)
+          ? d.activities
+          : Array.isArray(d)
+          ? d
+          : [];
+
+        const normalized = activitiesRaw.map((a) =>
+          normalizeActivity(a, defaultLocationName)
+        );
+
+        // ✅ enforce chronological order once
+        const sorted = sortActivitiesByTime(normalized);
+
+        return {
+          ...d,
+          day: d?.day ?? idx + 1,
+          activities: sorted,
+        };
+      });
+
+      setData({ itinerary: newItinerary });
+      setActiveDay(0);
+      setShowRouteMap(false);
+
+      // compute routes & travel times
+      await recomputeAll(newItinerary);
+
+      setTimeout(() => inputRef.current?.focus(), 50);
+    } catch (err) {
+      console.error("Generate error:", err);
+      alert("Network / parsing error. Check console for details.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   /* ----------------------- optimize active day ----------------------- */
@@ -684,6 +659,7 @@ const generate = async () => {
       ? it[activeDay].activities
       : [];
     if (acts.length < 3) return;
+
     const optimized = mixedOptimizeActivities(acts);
     it[activeDay] = { ...it[activeDay], activities: optimized };
     setData({ ...data, itinerary: it });
@@ -696,12 +672,18 @@ const generate = async () => {
     const rows = [
       ["Day", "Time", "Title", "Location", "Country", "Travel Time", "Weather", "Map Link"],
     ];
+
     (data.itinerary || []).forEach((day) =>
       (day.activities || []).forEach((act) => {
-        const loc = act.location || {};
+        const loc =
+          typeof act.location === "object" && act.location !== null
+            ? act.location
+            : { name: String(act.location || ""), city: "", country: "" };
+
         const weather = act.weather
           ? `${act.weather?.temp}°C ${act.weather?.description}`
           : "";
+
         rows.push([
           day.day,
           act.time || "",
@@ -714,64 +696,67 @@ const generate = async () => {
         ]);
       })
     );
+
     const csv = Papa.unparse(rows);
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    link.href = URL.createObjectURL(
+      new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    );
     link.download = "itinerary.csv";
     link.click();
   };
 
   /* ----------------------- UI helpers ----------------------- */
 
-  const flag = (c) =>
-    c
-      ? c
-          .toUpperCase()
-          .split("")
-          .map((x) => String.fromCodePoint(127397 + x.charCodeAt()))
-          .join("")
-      : "";
-
   const daySummary = (idx) => {
     const totals = routesByDay[idx]?.totals;
-    const acts = data.itinerary[idx]?.activities || [];
+    const acts = data.itinerary?.[idx]?.activities || [];
     if (!totals || !acts.length) return null;
+
     const { totalKm, walkMin, driveMin } = totals;
     const parts = [];
     if (walkMin) parts.push(`🚶 ${walkMin}m`);
     if (driveMin) parts.push(`🚕 ${driveMin}m`);
-    return `${totalKm.toFixed(1)} km travel · ${acts.length} stops${
+
+    return `${Number(totalKm || 0).toFixed(1)} km travel · ${acts.length} stops${
       parts.length ? " — " + parts.join(" + ") : ""
     }`;
   };
 
   const itemsForDay = useMemo(
-    () => data.itinerary?.[activeDay]?.activities.map((_, i) => `act-${i}`) || [],
+    () =>
+      data.itinerary?.[activeDay]?.activities?.map((_, i) => `act-${i}`) || [],
     [data.itinerary, activeDay]
   );
 
   const handleDragEnd = async ({ active, over }) => {
     if (!over || active.id === over.id) return;
-    const it = [...data.itinerary];
+
+    const it = Array.isArray(data.itinerary) ? [...data.itinerary] : [];
+    if (!it[activeDay] || !Array.isArray(it[activeDay].activities)) return;
+
     const acts = it[activeDay].activities;
-    const from = +active.id.split("-")[1];
-    const to = +over.id.split("-")[1];
+    const from = Number(String(active.id).split("-")[1]);
+    const to = Number(String(over.id).split("-")[1]);
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return;
+
     it[activeDay].activities = arrayMove(acts, from, to);
     setData({ ...data, itinerary: it });
     await recomputeDay(activeDay, it);
   };
 
   const fullDayBounds = useMemo(() => {
-    const acts = data.itinerary[activeDay]?.activities || [];
+    const acts = data.itinerary?.[activeDay]?.activities || [];
     const pts = acts
       .map((a) => a.coordinates)
       .filter(Boolean)
-      .map((c) => [c.lat, c.lon]);
+      .map((c) => [c.lat, c.lon])
+      .filter(([lat, lon]) => typeof lat === "number" && typeof lon === "number");
     return pts.length ? pts : null;
   }, [data.itinerary, activeDay]);
 
   const segmentForIndex = (segments, i) => {
-    if (!segments || i <= 0) return [];
+    if (!Array.isArray(segments) || i <= 0) return [];
     const seg = segments[i - 1];
     return seg ? [seg] : [];
   };
@@ -836,7 +821,8 @@ const generate = async () => {
           style={{
             position: "absolute",
             inset: 0,
-            background: "linear-gradient(to bottom, rgba(0,0,0,.25), rgba(0,0,0,0))",
+            background:
+              "linear-gradient(to bottom, rgba(0,0,0,.25), rgba(0,0,0,0))",
           }}
         />
         <div
@@ -937,16 +923,20 @@ const generate = async () => {
                 }}
               >
                 {data.itinerary[activeDay].activities?.map((act, i) => {
-                  const loc = act.location || {};
+                  const loc =
+                    typeof act.location === "object" && act.location !== null
+                      ? act.location
+                      : { name: String(act.location || ""), city: "", country: "" };
+
                   const c = act.coordinates;
                   const prevC =
                     data.itinerary[activeDay].activities?.[i - 1]?.coordinates;
+
                   const mode = prevC && c ? modeFor(distKm(prevC, c)) : undefined;
 
                   const daySegments = routesByDay[activeDay]?.segments || [];
                   const singleSeg = segmentForIndex(daySegments, i);
 
-                  // travel label (prefer routed label, fallback to estimate)
                   let travelLabel = act.travelTime;
                   let travelMode = mode;
 
@@ -959,7 +949,6 @@ const generate = async () => {
 
                   return (
                     <li key={`act-${i}`} style={{ marginBottom: 18 }}>
-                      {/* Travel-time row BETWEEN destinations */}
                       {i > 0 && travelLabel && (
                         <div
                           style={{
@@ -986,7 +975,6 @@ const generate = async () => {
                           singleSeg={singleSeg}
                           LeafletMap={LeafletMap}
                           userLocation={userLocation}
-                          flag={flag}
                           iconFor={iconFor}
                           setPopupImage={setPopupImage}
                         />

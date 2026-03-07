@@ -15,7 +15,7 @@ export async function POST(req) {
 
     // Truyền toàn bộ body (chứa tripCity, days, và userLocation) vào handler
     const result = await handleItineraryRequest(body);
-    
+
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
     console.error("ROUTE ERROR /api/itineraries:", err);

