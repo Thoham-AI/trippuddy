@@ -4,6 +4,9 @@
 /* ---------------------------------------------------------------
    DYNAMIC IMPORT: avoids Vercel bundling failures
 ---------------------------------------------------------------*/
+// Thêm import này ở đầu file handler.node.js
+import clientPromise from "@/lib/mongodb"; 
+
 async function getOpenAI() {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY missing");
@@ -23,7 +26,7 @@ const DEFAULT_LOCATION = {
 };
 
 const MAX_DAYS = 14;
-const MAX_ACTIVITIES_PER_DAY = 8;
+const MAX_ACTIVITIES_PER_DAY = 10;
 
 const FETCH_TIMEOUT_MS = 9000;
 
@@ -232,6 +235,95 @@ function setArrival(a, mins) {
   a.arrival_time = fmtHHMM(mins);
 }
 
+function isLunchActivity(a) {
+  const title = String(a?.title || "").toLowerCase();
+  const desc = String(a?.description || "").toLowerCase();
+  const mins = parseHHMM(a?.arrival_time);
+  const type = String(a?.type || "").toLowerCase();
+
+  if (type === "meal") {
+    if (
+      title.includes("lunch") ||
+      title.includes("bữa trưa") ||
+      title.includes("ăn trưa") ||
+      desc.includes("lunch") ||
+      desc.includes("bữa trưa") ||
+      desc.includes("ăn trưa")
+    ) {
+      return true;
+    }
+  }
+
+  if (
+    title.includes("lunch") ||
+    title.includes("bữa trưa") ||
+    title.includes("ăn trưa")
+  ) {
+    return true;
+  }
+
+  // Generic eatery/restaurant around lunch time => count as lunch
+  if (
+    mins != null &&
+    mins >= 11 * 60 &&
+    mins <= 14 * 60 &&
+    (
+      title.includes("eatery") ||
+      title.includes("restaurant") ||
+      title.includes("quán ăn") ||
+      title.includes("nhà hàng")
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isDinnerActivity(a) {
+  const title = String(a?.title || "").toLowerCase();
+  const desc = String(a?.description || "").toLowerCase();
+  const mins = parseHHMM(a?.arrival_time);
+  const type = String(a?.type || "").toLowerCase();
+
+  if (type === "meal") {
+    if (
+      title.includes("dinner") ||
+      title.includes("bữa tối") ||
+      title.includes("ăn tối") ||
+      desc.includes("dinner") ||
+      desc.includes("bữa tối") ||
+      desc.includes("ăn tối")
+    ) {
+      return true;
+    }
+  }
+
+  if (
+    title.includes("dinner") ||
+    title.includes("bữa tối") ||
+    title.includes("ăn tối")
+  ) {
+    return true;
+  }
+
+  if (
+    mins != null &&
+    mins >= 17 * 60 + 30 &&
+    mins <= 20 * 60 &&
+    (
+      title.includes("eatery") ||
+      title.includes("restaurant") ||
+      title.includes("quán ăn") ||
+      title.includes("nhà hàng")
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function ensureMealSlotsPerDay(days, tripCity, userPrompt) {
   const avoidNight = promptIndicatesKidsOrElderly(userPrompt) && !promptRequiresNight(userPrompt);
 
@@ -241,8 +333,8 @@ function ensureMealSlotsPerDay(days, tripCity, userPrompt) {
 
     // 1. Kiểm tra sự tồn tại của các bữa ăn (Dùng Regex bao quát hơn)
     const hasBreakfast = acts.some(x => /breakfast|coffee|cafe|café|ăn sáng/i.test(x.title));
-    const hasLunch = acts.some(x => /lunch|noodle|restaurant|ăn trưa/i.test(x.title));
-    const hasDinner = acts.some(x => /dinner|tối/i.test(x.title));
+    const hasLunch = acts.some(isLunchActivity);
+    const hasDinner = acts.some(isDinnerActivity);
     const hasNight = acts.some(x => /night|evening|stroll|đêm/i.test(x.title));
 
     const city = tripCity || "the city";
@@ -261,7 +353,7 @@ function ensureMealSlotsPerDay(days, tripCity, userPrompt) {
     // 3. Thêm bữa trưa (Nếu chưa có bất kỳ hoạt động ăn uống nào tầm giữa ngày)
     if (!hasLunch) {
       acts.push({
-        title: `Lunch at a local restaurant in ${city}`,
+        title: "Lunch at a nearby local restaurant",
         arrival_time: "12:30",
         duration_minutes: 75,
         description: "Taste authentic local specialties for lunch.",
@@ -328,6 +420,232 @@ function sortActivitiesByTime(days) {
       if (am !== bm) return am - bm;
       return String(a?.title || "").localeCompare(String(b?.title || ""));
     });
+  }
+}
+
+async function fillMissingActivitiesBetweenMeals(days, tripCity = "", tripCenter = null) {
+  if (!Array.isArray(days)) return;
+
+  function getLatLon(a) {
+    const lat = Number(a?.latitude ?? a?.lat ?? a?.coordinates?.lat);
+    const lon = Number(a?.longitude ?? a?.lon ?? a?.coordinates?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return { lat, lon };
+  }
+
+  function isMealActivity(a) {
+    const t = String(a?.title || "").toLowerCase();
+    const type = String(a?.type || "").toLowerCase();
+    return (
+      type === "meal" ||
+      t.includes("breakfast") ||
+      t.includes("coffee") ||
+      t.includes("brunch") ||
+      t.includes("lunch") ||
+      t.includes("dinner") ||
+      t.includes("ăn sáng") ||
+      t.includes("bữa sáng") ||
+      t.includes("ăn trưa") ||
+      t.includes("bữa trưa") ||
+      t.includes("ăn tối") ||
+      t.includes("bữa tối")
+    );
+  }
+
+  function isLunchActivity(a) {
+    const t = String(a?.title || "").toLowerCase();
+    const d = String(a?.description || "").toLowerCase();
+    const mins = parseHHMM(a?.arrival_time);
+    const type = String(a?.type || "").toLowerCase();
+
+    if (type === "meal" && (t.includes("lunch") || d.includes("lunch") || t.includes("ăn trưa") || t.includes("bữa trưa"))) {
+      return true;
+    }
+
+    if (t.includes("lunch") || t.includes("ăn trưa") || t.includes("bữa trưa")) return true;
+
+    return mins != null &&
+      mins >= 11 * 60 &&
+      mins <= 14 * 60 &&
+      (t.includes("restaurant") || t.includes("eatery") || t.includes("nhà hàng") || t.includes("quán ăn"));
+  }
+
+  function buildRealStopCandidates(prev, next, gapMinutes) {
+    const prevTitle = String(prev?.title || "").toLowerCase();
+    const nextTitle = String(next?.title || "").toLowerCase();
+
+    const candidates = [];
+
+    // Ưu tiên stop giữa breakfast và lunch
+    if (isMealActivity(prev) && isLunchActivity(next)) {
+      candidates.push(
+        {
+          title: `Scenic viewpoint near ${tripCity || "the route"}`,
+          type: "sightseeing",
+          description: "Stop at a real scenic viewpoint or landmark on the way before lunch.",
+          duration_minutes: 60,
+        },
+        {
+          title: `Local cultural village in ${tripCity || "the area"}`,
+          type: "sightseeing",
+          description: "Visit a real village or cultural stop before lunch.",
+          duration_minutes: 60,
+        },
+        {
+          title: `Landmark in ${tripCity || "the area"}`,
+          type: "sightseeing",
+          description: "Visit a real landmark or photo stop before lunch.",
+          duration_minutes: 45,
+        }
+      );
+    }
+
+    // Nếu là đoạn route scenic
+    if (
+      prevTitle.includes("pass") ||
+      prevTitle.includes("mountain") ||
+      prevTitle.includes("flag") ||
+      prevTitle.includes("viewpoint") ||
+      prevTitle.includes("đèo") ||
+      prevTitle.includes("núi") ||
+      prevTitle.includes("cột cờ")
+    ) {
+      candidates.push(
+        {
+          title: `Scenic stop near ${prev.title || tripCity || "the area"}`,
+          type: "sightseeing",
+          description: "A real scenic stop or viewpoint near the previous attraction.",
+          duration_minutes: 45,
+        },
+        {
+          title: `Photo viewpoint near ${prev.title || tripCity || "the area"}`,
+          type: "sightseeing",
+          description: "A real viewpoint or roadside panorama stop.",
+          duration_minutes: 45,
+        }
+      );
+    }
+
+    // Fallback chung nhưng vẫn phải resolve ra place thật, không dùng trực tiếp
+    candidates.push(
+      {
+        title: `Viewpoint in ${tripCity || "the area"}`,
+        type: "sightseeing",
+        description: "A real scenic viewpoint along the route.",
+        duration_minutes: 45,
+      },
+      {
+        title: `Tourist attraction in ${tripCity || "the area"}`,
+        type: "sightseeing",
+        description: "A real attraction along the route.",
+        duration_minutes: 60,
+      },
+      {
+        title: `Cultural stop in ${tripCity || "the area"}`,
+        type: "sightseeing",
+        description: "A real cultural stop along the route.",
+        duration_minutes: 45,
+      }
+    );
+
+    return candidates;
+  }
+
+  for (const day of days) {
+    if (!Array.isArray(day.activities) || day.activities.length < 2) continue;
+
+    const acts = [...day.activities];
+    const rebuilt = [];
+    const seenResolve = {
+      usedPlaceIds: new Set(),
+      lastPlacePoint: null,
+      lastPlaceName: "",
+    };
+
+    // Khởi tạo seenResolve từ activity đầu tiên nếu có tọa độ
+    const firstPoint = getLatLon(acts[0]);
+    if (firstPoint) {
+      seenResolve.lastPlacePoint = firstPoint;
+      seenResolve.lastPlaceName = acts[0]?.title || "";
+    }
+
+    for (let i = 0; i < acts.length; i++) {
+      const current = acts[i];
+      rebuilt.push(current);
+
+      const next = acts[i + 1];
+      if (!next) continue;
+
+      const currentTime = parseHHMM(current?.arrival_time);
+      const nextTime = parseHHMM(next?.arrival_time);
+
+      if (currentTime == null || nextTime == null) continue;
+
+      const currentDur = Number.isFinite(Number(current?.duration_minutes))
+        ? Number(current.duration_minutes)
+        : 75;
+
+      const currentEnd = currentTime + currentDur;
+      const gap = nextTime - currentEnd;
+
+      // Chỉ chèn khi trống quá nhiều thời gian
+      if (gap < 90) continue;
+
+      // Không chèn thêm nếu ngày đã khá đầy
+      if (rebuilt.length >= 5) continue;
+
+      const prevPoint = getLatLon(current);
+      if (prevPoint) {
+        seenResolve.lastPlacePoint = prevPoint;
+        seenResolve.lastPlaceName = current?.title || seenResolve.lastPlaceName;
+      }
+
+      const candidates = buildRealStopCandidates(current, next, gap);
+
+      let inserted = null;
+
+      for (const candidate of candidates) {
+        const resolved = await resolvePlace(candidate, tripCity, tripCenter, seenResolve);
+        if (!resolved?.lat || !resolved?.lon) continue;
+
+        const insertedTime = currentEnd + 30;
+        const latestAllowed = nextTime - 45;
+        if (insertedTime >= latestAllowed) continue;
+
+        inserted = {
+          title: resolved.name || candidate.title,
+          arrival_time: fmtHHMM(insertedTime),
+          duration_minutes: candidate.duration_minutes || 45,
+          description: candidate.description,
+          type: candidate.type || "sightseeing",
+          placeId: resolved.placeId || null,
+          latitude: Number(resolved.lat),
+          longitude: Number(resolved.lon),
+          coordinates: {
+            lat: Number(resolved.lat),
+            lon: Number(resolved.lon),
+          },
+          mapsUrl: resolved.mapsUrl || null,
+          website: resolved.mapsUrl || null,
+        };
+
+        break;
+      }
+
+      if (inserted) {
+        rebuilt.push(inserted);
+
+        // cập nhật seen để bữa trưa / stop sau bám tiếp theo route
+        seenResolve.lastPlacePoint = {
+          lat: Number(inserted.latitude),
+          lon: Number(inserted.longitude),
+        };
+        seenResolve.lastPlaceName = inserted.title || seenResolve.lastPlaceName;
+        if (inserted.placeId) seenResolve.usedPlaceIds.add(inserted.placeId);
+      }
+    }
+
+    day.activities = rebuilt;
   }
 }
 
@@ -656,25 +974,46 @@ function enforceBreakfastFirst(days, requireBreakfast) {
 
 /* --- STRONGER LOCALITY RULES (UPDATED) --- */
 function buildPrompt(prompt, destinationHint = "", requireBreakfast = false, userCity = "", tripCity = "") {
-  const city = tripCity || destinationHint || "the trip city";
-return `
-You are TripPuddy, an expert local travel planner. 
+  return `
+You are TripPuddy, an expert travel planner.
 
-STRICT GEOGRAPHIC BOUNDARY RULES:
-1. ALL activities, landmarks, and restaurants MUST be located physically within the city/province of ${city}.
-2. NEVER suggest any place outside of ${city}, even if it is a world-famous attraction (e.g., if the city is Nam Dinh, do NOT suggest Hoanh Son Mountain in Ha Tinh or Ha Long Bay).
-3. If you cannot find enough specific famous landmarks in ${city}, focus on local markets, neighborhood pagodas, or "Hidden Gem" local eateries within ${city} limits.
-4. Double-check that every coordinates and place name belongs to ${city}.
+Rules:
+- Detect the exact number of days from the user input.
+- Output EXACTLY that many days.
+- Plan 4-6 activities per day.
+- Every activity must be a REAL place or a clearly defined real stop.
+- Do NOT invent vague placeholder activities such as "explore nearby attractions", "free time", or "walk around".
+- Assume the traveler starts Day 1 already in the trip city, waking up from accommodation there.
+- NEVER include travel from the user's current location, home city, or GPS location to the destination city as part of the itinerary.
+- Day 1 must begin inside the trip city itself, starting from accommodation in that city.
+- ALL activities must stay inside the trip city / destination region requested by the user.
+${tripCity ? `- Trip city: ${tripCity}.\n` : ``}${userCity ? `- User current city (from location): ${userCity}.\n` : ``}
 
-General Rules:
-- Detect number of days from user input and output EXACTLY that many days.
-- 4–6 activities per day with a morning start (08:00–09:30).
-- For restaurants, if unsure of a specific name, use "Local ${city} Restaurant" to ensure it stays in the correct area.
-- Time: Lunch/Dinner duration should be max 90 minutes.
+Food rules:
+- Include exactly 1 lunch per day between 12:00-13:30.
+- Include exactly 1 dinner per day between 18:00-19:30.
+- Do NOT create duplicate lunch or duplicate dinner.
+- Use real places for meals whenever possible.
+- If a remote area has no clearly known restaurant, use a nearby local eatery at that location.
+- If no restaurant is available nearby, mention in the description that the traveler should prepare snacks or food in advance.
+- Do NOT send the traveler back to the city center just for lunch or dinner.
 
-${requireBreakfast ? `- FIRST activity of EACH day MUST be breakfast/coffee suitable for 08:00–09:30.\n` : ``}
+Timing rules:
+- Morning start should be between 08:00-09:30.
+- Breakfast / coffee should be between 07:00-09:30.
+- Museums / attractions usually after 09:00.
+- Lunch should not happen immediately after breakfast unless the user explicitly wants a very light day.
+- Each day should include at least one sightseeing / cultural / scenic stop between breakfast and lunch.
+- Keep the route geographically logical and avoid backtracking.
+- Prefer attractions that are near the previous stop or naturally along the route.
+- If moving into a remote scenic area, keep the next stops near that area instead of returning to the city center.
 
-Return STRICT JSON:
+Output rules:
+- Return STRICT JSON only.
+- No markdown.
+- No commentary outside the JSON.
+- Use this structure exactly:
+
 {
   "days": [
     {
@@ -684,12 +1023,21 @@ Return STRICT JSON:
           "title": "",
           "arrival_time": "",
           "duration_minutes": 90,
-          "description": ""
+          "description": "",
+          "type": "sightseeing"
         }
       ]
     }
   ]
 }
+
+Type rules:
+- Use "meal" for breakfast, lunch, dinner, coffee.
+- Use "sightseeing" for viewpoints, landmarks, villages, museums, markets, nature stops.
+- Use "evening" for nightlife, night market, evening walk, or night views.
+
+${requireBreakfast ? `- The traveler is assumed to already be staying in ${tripCity || destinationHint || "the destination city"} at the start of Day 1, so the FIRST activity of Day 1 MUST be breakfast/brunch/coffee in that city between 08:00-09:30.\n` : ``}
+${destinationHint ? `- ALL activities MUST be within ${destinationHint}. Do NOT include places outside ${destinationHint}.` : ""}
 
 USER INPUT:
 "${prompt}"
@@ -791,9 +1139,34 @@ function buildGenericPlaceQueries(cleanTitle, destinationHint, a, anchorName = "
 
   return [...new Set(queries.filter(Boolean))];
 }
+function isGenericMealFallback(a) {
+  const t = String(a?.title || "").toLowerCase();
+  return (
+    a?.type === "meal" &&
+    (
+      t.includes("local restaurant") ||
+      t.includes("local eatery") ||
+      t.includes("nearby restaurant") ||
+      t.includes("nearby local restaurant") ||
+      t.includes("breakfast in ") ||
+      t.includes("lunch at ") ||
+      t.includes("dinner in ")
+    )
+  );
+}
 
-// Thêm import này ở đầu file handler.node.js
-import clientPromise from "@/lib/mongodb"; 
+function buildNearbyRestaurantQueries(a, anchorName = "", destinationHint = "") {
+  const meal = mealSearchLabel(a);
+  const queries = [];
+
+  if (anchorName) queries.push(`${meal} near ${anchorName}`);
+  if (anchorName) queries.push(`restaurant near ${anchorName}`);
+
+  // chỉ dùng destinationHint như fallback nhẹ, không phải ưu tiên đầu
+  if (!anchorName && destinationHint) queries.push(`${meal} in ${destinationHint}`);
+
+  return [...new Set(queries.filter(Boolean))];
+}
 
 /**
  * Resolves location data (lat/lon) by checking MongoDB cache first, 
@@ -807,12 +1180,57 @@ import clientPromise from "@/lib/mongodb";
  * Resolved version of resolvePlace with internal scoring logic included.
  * Fixes the "calculateInternalScore is not defined" error.
  */
+function buildLatLonMapUrl(lat, lon) {
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return null;
+  return `https://www.google.com/maps/search/?api=1&query=${Number(lat)},${Number(lon)}`;
+}
+
+function applyAnchorLocationToMeal(activity, anchorPoint, anchorName = "") {
+  if (!anchorPoint) return activity;
+
+  const lat = Number(anchorPoint.lat);
+  const lon = Number(anchorPoint.lon);
+
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    activity.latitude = lat;
+    activity.longitude = lon;
+    activity.coordinates = { lat, lon };
+    activity.mapsUrl = buildLatLonMapUrl(lat, lon);
+    activity.website = activity.mapsUrl;
+    activity.placeId = null;
+  }
+
+  if (anchorName && !activity.description?.toLowerCase().includes("near this attraction")) {
+    activity.description =
+      `${activity.description || "Enjoy a meal nearby."} Near ${anchorName}. If no restaurant is available nearby, prepare snacks in advance.`;
+  }
+
+  return activity;
+}
+
 async function resolvePlace(a, destinationHint = "", tripCenter = null, seen = null) {
   try {
     const rawTitle = String(a?.title || "attraction").trim();
     const cleanTitle = canonicalPlaceTitle(rawTitle);
     const plainDestination = String(destinationHint || "").trim();
-    const cacheKey = `${cleanTitle} in ${plainDestination}`.toLowerCase().trim();
+
+    const usedPlaceIds =
+      seen && seen.usedPlaceIds instanceof Set ? seen.usedPlaceIds : new Set();
+
+    const anchorPoint =
+      seen?.lastPlacePoint?.lat && seen?.lastPlacePoint?.lon
+        ? seen.lastPlacePoint
+        : tripCenter;
+
+    const anchorName = String(seen?.lastPlaceName || "").trim();
+    const genericMeal = isGenericMealFallback(a);
+
+    // Generic meal should cache by anchor, not just by city,
+    // otherwise "Lunch at a nearby local restaurant in Ha Giang"
+    // will keep reusing a city-center restaurant.
+    const cacheKey = genericMeal
+      ? `${cleanTitle} near ${anchorName || `${anchorPoint?.lat || ""},${anchorPoint?.lon || ""}`}`.toLowerCase().trim()
+      : `${cleanTitle} in ${plainDestination}`.toLowerCase().trim();
 
     // 1. DATABASE CHECK
     const client = await clientPromise;
@@ -822,66 +1240,129 @@ async function resolvePlace(a, destinationHint = "", tripCenter = null, seen = n
     if (cachedData) {
       console.log(`[Place Cache Hit]: ${cacheKey}`);
       const p = cachedData.data;
-      if (seen && p.lat && p.lon) {
+
+      if (seen && p?.lat && p?.lon) {
         if (!seen.usedPlaceIds) seen.usedPlaceIds = new Set();
         if (p.placeId) seen.usedPlaceIds.add(p.placeId);
         seen.lastPlacePoint = { lat: p.lat, lon: p.lon };
         seen.lastPlaceName = p.name || cleanTitle;
       }
+
       return p;
     }
 
-    // 2. GOOGLE API FALLBACK
+    // 2. GOOGLE API SEARCH
     const baseUrl = getBaseUrl();
-    const usedPlaceIds = (seen && seen.usedPlaceIds instanceof Set) ? seen.usedPlaceIds : new Set();
-    const anchorPoint = (seen?.lastPlacePoint?.lat && seen?.lastPlacePoint?.lon) ? seen.lastPlacePoint : tripCenter;
-    const anchorName = String(seen?.lastPlaceName || "").trim();
-    
-    const queries = buildGenericPlaceQueries(cleanTitle, plainDestination, a, anchorName);
+
+    const queries = genericMeal
+      ? buildNearbyRestaurantQueries(a, anchorName, plainDestination)
+      : buildGenericPlaceQueries(cleanTitle, plainDestination, a, anchorName);
 
     for (const q of queries) {
       const input = encodeURIComponent(q);
       let url = `${baseUrl}/api/google-proxy?input=${input}`;
-      if (anchorPoint?.lat && anchorPoint?.lon) url += `&location=${anchorPoint.lat},${anchorPoint.lon}&radius=30000`;
+
+      // Always bias search around previous attraction / last resolved point
+      if (anchorPoint?.lat && anchorPoint?.lon) {
+        url += `&location=${anchorPoint.lat},${anchorPoint.lon}&radius=30000`;
+      }
 
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) continue;
+
       const data = await res.json();
       const results = Array.isArray(data?.results) ? data.results : [];
       if (!results.length) continue;
 
-      // 3. INTERNAL SCORING LOGIC (FIXED)
-      const scored = results.map(result => {
-        const lat = Number(result?.geometry?.location?.lat);
-        const lon = Number(result?.geometry?.location?.lng);
-        const point = (Number.isFinite(lat) && Number.isFinite(lon)) ? { lat, lon } : null;
-        
-        // Basic Scoring algorithm
-        let score = 0;
-        const name = (result.name || "").toLowerCase();
-        const target = cleanTitle.toLowerCase();
-        
-        if (name.includes(target)) score += 50;
-        if (usedPlaceIds.has(result.place_id)) score -= 100; // Avoid duplicates
-        
-        const dist = (anchorPoint && point) ? distKm(anchorPoint, point) : 0;
-        score -= dist; // Prefer closer places
+      const scored = results
+        .map((result) => {
+          const lat = Number(result?.geometry?.location?.lat);
+          const lon = Number(result?.geometry?.location?.lng);
+          const point =
+            Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
 
-        return { result, point, distance: dist, score };
-      })
-      .filter(x => x.point)
-      .sort((a, b) => b.score - a.score);
+          let score = 0;
+          const name = String(result?.name || "").toLowerCase();
+          const target = cleanTitle.toLowerCase();
+
+          if (!genericMeal && name.includes(target)) score += 50;
+          if (usedPlaceIds.has(result.place_id)) score -= 100;
+
+          const dist = anchorPoint && point ? distKm(anchorPoint, point) : 0;
+          score -= dist; // closer is better
+
+          // For generic meal fallback, strongly prefer nearby results
+          if (genericMeal) {
+            if (dist <= 3) score += 40;
+            else if (dist <= 10) score += 20;
+            else if (dist <= 20) score += 5;
+            else score -= 30;
+
+            if (name.includes("restaurant") || name.includes("eatery") || name.includes("cafe")) {
+              score += 10;
+            }
+          }
+
+          return { result, point, distance: dist, score };
+        })
+        .filter((x) => x.point)
+        .sort((a, b) => b.score - a.score);
 
       const best = scored[0];
       if (best) {
+        // IMPORTANT:
+        // If this is a generic meal fallback and the best result is still too far,
+        // do NOT snap back to a city-center restaurant.
+        if (genericMeal && best.distance > 30) {
+          continue;
+        }
+
         const picked = best.result;
+        const pickedName = String(picked?.name || "").trim().toLowerCase();
+        const pickedAddress = String(picked?.formatted_address || "").trim().toLowerCase();
+
+        // Extra safety for generic meal:
+        // avoid results that look like they belong to the city center when we already
+        // have an anchor point from the previous attraction.
+        if (
+          genericMeal &&
+          anchorName &&
+          best.distance > 15 &&
+          (
+            pickedAddress.includes(String(plainDestination || "").toLowerCase()) ||
+            pickedName.includes(String(plainDestination || "").toLowerCase())
+          )
+        ) {
+          continue;
+        }
+
         const placeResult = {
           placeId: picked?.place_id || null,
           lat: best.point.lat,
           lon: best.point.lon,
           name: picked?.name || null,
           address: picked?.formatted_address || null,
-          mapsUrl: picked?.url || (picked?.place_id ? `https://www.google.com/maps/search/?api=1&query=Google&query_place_id=${picked.place_id}` : null),
+
+          // Google Text Search usually does NOT return picked.url reliably,
+          // so prefer a stable place_id-based Maps URL.
+          mapsUrl: picked?.place_id
+            ? `https://www.google.com/maps/search/?api=1&query=Google&query_place_id=${picked.place_id}`
+            : (
+                Number.isFinite(Number(best.point.lat)) && Number.isFinite(Number(best.point.lon))
+                  ? `https://www.google.com/maps/search/?api=1&query=${Number(best.point.lat)},${Number(best.point.lon)}`
+                  : null
+              ),
+
+          // Keep website usable in UI even if no official website exists.
+          website: picked?.website || (
+            picked?.place_id
+              ? `https://www.google.com/maps/search/?api=1&query=Google&query_place_id=${picked.place_id}`
+              : (
+                  Number.isFinite(Number(best.point.lat)) && Number.isFinite(Number(best.point.lon))
+                    ? `https://www.google.com/maps/search/?api=1&query=${Number(best.point.lat)},${Number(best.point.lon)}`
+                    : null
+                )
+          ),
         };
 
         // 4. SAVE TO DB
@@ -902,6 +1383,34 @@ async function resolvePlace(a, destinationHint = "", tripCenter = null, seen = n
         return placeResult;
       }
     }
+
+    // 5. HARD FALLBACK FOR GENERIC MEAL:
+    // use previous attraction location for map/weather,
+    // never fall back to a city-center restaurant.
+    if (genericMeal && anchorPoint?.lat && anchorPoint?.lon) {
+      const fallbackResult = {
+        placeId: null,
+        lat: Number(anchorPoint.lat),
+        lon: Number(anchorPoint.lon),
+        name: anchorName || cleanTitle,
+        address: null,
+        mapsUrl: `https://www.google.com/maps/search/?api=1&query=${Number(anchorPoint.lat)},${Number(anchorPoint.lon)}`,
+      };
+
+      if (seen) {
+        seen.usedPlaceIds = usedPlaceIds;
+        // keep lastPlacePoint as-is
+        if (!seen.lastPlacePoint) {
+          seen.lastPlacePoint = { lat: fallbackResult.lat, lon: fallbackResult.lon };
+        }
+        if (!seen.lastPlaceName) {
+          seen.lastPlaceName = fallbackResult.name || cleanTitle;
+        }
+      }
+
+      return fallbackResult;
+    }
+
     return null;
   } catch (err) {
     console.error("🔥 resolvePlace error:", err);
@@ -996,7 +1505,7 @@ function clearPlaceFields(a) {
   a.mapsUrl = null;
 }
 
-function enforceLocality(days, tripCenter, tripCity, maxKm = 45) {
+function enforceLocality(days, tripCenter, tripCity, maxKm = 200) {
   if (!tripCenter || !Number.isFinite(tripCenter.lat) || !Number.isFinite(tripCenter.lon)) return;
 
   for (const day of days || []) {
@@ -1044,7 +1553,7 @@ export async function handleItineraryRequest(input) {
     const userCity = await reverseGeocodeCity(userLocation?.lat, userLocation?.lon);
 
     const promptLooksTravelSpecific =
-      /(\d+\s*ngay|\d+\s*days?|o|ở|tai|tại|den|đến|du lich|du lịch|visit|trip|itinerary|travel|in|to)/i.test(
+      /\b(\d+\s*ngay|\d+\s*days?|o|ở|tai|tại|den|đến|du lich|du lịch|visit|trip|itinerary|travel|in|to)\b/i.test(
         normalizeLooseText(userPrompt)
       );
 
@@ -1053,10 +1562,11 @@ export async function handleItineraryRequest(input) {
       destinationHint ||
       (promptLooksTravelSpecific ? "" : userCity || "");
 
-    // Center used to enforce locality (Nam Dinh/Thai Binh won’t drift to Hanoi)
+    // Center used to enforce locality
     const tripCenter = await geocodeCenter(tripCity);
 
-    const requireBreakfast = cityMatches(userCity, tripCity);
+    // Always start Day 1 from the destination city itself
+    const requireBreakfast = true;
 
     const client = await getOpenAI();
 
@@ -1066,7 +1576,13 @@ export async function handleItineraryRequest(input) {
         { role: "system", content: "Return JSON only." },
         {
           role: "user",
-          content: buildPrompt(userPrompt, destinationHint, requireBreakfast, userCity, tripCity),
+          content: buildPrompt(
+            userPrompt,
+            destinationHint,
+            requireBreakfast,
+            userCity,
+            tripCity
+          ),
         },
       ],
       temperature: 0.5,
@@ -1083,29 +1599,11 @@ export async function handleItineraryRequest(input) {
       itinerary = { days: [] };
     }
 
-    const days = Array.isArray(itinerary.days) ? itinerary.days.slice(0, MAX_DAYS) : [];
+    const days = Array.isArray(itinerary.days)
+      ? itinerary.days.slice(0, MAX_DAYS)
+      : [];
 
     ensureMealSlotsPerDay(days, tripCity, userPrompt);
-
-    const promptHasDates =
-      /\b(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(
-        userPrompt
-      );
-
-    if (/\bdarwin\b/i.test(tripCity || "") && !promptHasDates && isMindilLikelyClosedNow()) {
-      for (const day of days) {
-        if (!Array.isArray(day.activities)) continue;
-        for (const a of day.activities) {
-          const t = (a?.title || "").toString().toLowerCase();
-          if (t.includes("mindil") && t.includes("market")) {
-            a.title = "Lunch at Darwin Waterfront Precinct";
-            a.description =
-              "Enjoy lunch at the Darwin Waterfront precinct with a choice of cafes and restaurants, then take a stroll along the harbour views.";
-            clearPlaceFields(a);
-          }
-        }
-      }
-    }
 
     for (const day of days) {
       day.activities = Array.isArray(day.activities)
@@ -1113,9 +1611,9 @@ export async function handleItineraryRequest(input) {
         : [];
     }
 
-    enforceBreakfastFirst(days, requireBreakfast);
+    enforceBreakfastFirst(days, requireBreakfast, tripCity);
 
-    // 1st pass: resolve places + photos sequentially within each day
+    // -------------------- PASS 1: resolve place + photo --------------------
     for (const day of days) {
       const seenResolve = {
         usedImageUrls: new Set(),
@@ -1127,8 +1625,18 @@ export async function handleItineraryRequest(input) {
       for (const a of day.activities || []) {
         if (!a?.title) continue;
 
-        const place = await resolvePlace(a, tripCity || destinationHint, tripCenter, seenResolve);
-        const photo = await resolvePhoto(a, tripCity || destinationHint, place, seenResolve);
+        const place = await resolvePlace(
+          a,
+          tripCity || destinationHint,
+          tripCenter,
+          seenResolve
+        );
+        const photo = await resolvePhoto(
+          a,
+          tripCity || destinationHint,
+          place,
+          seenResolve
+        );
 
         if (place) {
           a.placeId = place.placeId || null;
@@ -1153,9 +1661,7 @@ export async function handleItineraryRequest(input) {
       }
     }
 
-    enforceLocality(days, tripCenter, tripCity, 45);
-
-    // 2nd pass: re-resolve only activities without coordinates
+    // -------------------- PASS 2: re-resolve missing coords only --------------------
     for (const day of days) {
       const seenResolve = {
         usedImageUrls: new Set(),
@@ -1166,6 +1672,7 @@ export async function handleItineraryRequest(input) {
 
       for (const a of day.activities || []) {
         if (!a?.title) continue;
+
         if (a.coordinates || a.placeId) {
           if (a.coordinates) {
             seenResolve.lastPlacePoint = {
@@ -1179,8 +1686,18 @@ export async function handleItineraryRequest(input) {
           continue;
         }
 
-        const place = await resolvePlace(a, tripCity || destinationHint, tripCenter, seenResolve);
-        const photo = await resolvePhoto(a, tripCity || destinationHint, place, seenResolve);
+        const place = await resolvePlace(
+          a,
+          tripCity || destinationHint,
+          tripCenter,
+          seenResolve
+        );
+        const photo = await resolvePhoto(
+          a,
+          tripCity || destinationHint,
+          place,
+          seenResolve
+        );
 
         if (place) {
           a.placeId = place.placeId || null;
@@ -1205,8 +1722,96 @@ export async function handleItineraryRequest(input) {
       }
     }
 
+    // -------------------- TIME NORMALIZATION BEFORE GAP FILL --------------------
     await normalizeTimesToOpeningHours(days, tripCity);
+    enforceLunchBefore(days, 13 * 60 + 30);
+    sortActivitiesByTime(days);
 
+    // -------------------- FILL LARGE GAPS WITH REAL STOPS ONLY --------------------
+    await fillMissingActivitiesBetweenMeals(days, tripCity, tripCenter);
+    sortActivitiesByTime(days);
+
+    // -------------------- PASS 3: hydrate newly inserted activities --------------------
+    for (const day of days) {
+      const seenResolve = {
+        usedImageUrls: new Set(),
+        usedPlaceIds: new Set(),
+        lastPlacePoint: null,
+        lastPlaceName: "",
+      };
+
+      for (const a of day.activities || []) {
+        if (!a?.title) continue;
+
+        if (a.coordinates) {
+          seenResolve.lastPlacePoint = {
+            lat: Number(a.coordinates.lat),
+            lon: Number(a.coordinates.lon),
+          };
+        }
+        if (a.placeId) seenResolve.usedPlaceIds.add(a.placeId);
+        if (a.image) seenResolve.usedImageUrls.add(a.image);
+        seenResolve.lastPlaceName = a.title || seenResolve.lastPlaceName;
+
+        // inserted activity may already have place, but still need image
+        if (!a.placeId && !a.coordinates) {
+          const place = await resolvePlace(
+            a,
+            tripCity || destinationHint,
+            tripCenter,
+            seenResolve
+          );
+
+          if (place) {
+            a.placeId = place.placeId || null;
+            a.latitude = Number.isFinite(Number(place.lat)) ? Number(place.lat) : null;
+            a.longitude = Number.isFinite(Number(place.lon)) ? Number(place.lon) : null;
+            a.coordinates =
+              Number.isFinite(Number(place.lat)) && Number.isFinite(Number(place.lon))
+                ? { lat: Number(place.lat), lon: Number(place.lon) }
+                : null;
+            a.mapsUrl = place.mapsUrl || null;
+            a.website = place.website || place.mapsUrl || null;
+
+            if (a.coordinates) {
+              seenResolve.lastPlacePoint = {
+                lat: Number(a.coordinates.lat),
+                lon: Number(a.coordinates.lon),
+              };
+            }
+            if (a.placeId) seenResolve.usedPlaceIds.add(a.placeId);
+          }
+        }
+
+        if (!a.image) {
+          const placeForPhoto =
+            a.coordinates || a.placeId
+              ? {
+                  placeId: a.placeId || null,
+                  lat: a.coordinates?.lat ?? a.latitude ?? null,
+                  lon: a.coordinates?.lon ?? a.longitude ?? null,
+                  mapsUrl: a.mapsUrl || null,
+                }
+              : null;
+
+          const photo = await resolvePhoto(
+            a,
+            tripCity || destinationHint,
+            placeForPhoto,
+            seenResolve
+          );
+
+          if (photo) {
+            a.image = photo;
+            seenResolve.usedImageUrls.add(photo);
+          }
+        }
+      }
+    }
+
+    // -------------------- FINAL LOCALITY + TIME CLEANUP --------------------
+    enforceLocality(days, tripCenter, tripCity, 200);
+    await normalizeTimesToOpeningHours(days, tripCity);
     enforceLunchBefore(days, 13 * 60 + 30);
     sortActivitiesByTime(days);
 

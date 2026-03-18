@@ -1,193 +1,148 @@
+// src/app/api/images/route.js
 import { NextResponse } from "next/server";
-import clientPromise from "@/lib/mongodb";
 
-function normalizeKey(s = "") {
-  return String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
-}
+export const runtime = "nodejs";
 
-async function findUnsplashImage(query) {
-  const accessKey = process.env.UNSPLASH_ACCESS_KEY;
-  if (!accessKey || !query) return null;
+const FETCH_TIMEOUT_MS = 8000;
 
-  const url =
-    `https://api.unsplash.com/search/photos` +
-    `?query=${encodeURIComponent(query)}` +
-    `&per_page=1&orientation=landscape&content_filter=high`;
-
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Client-ID ${accessKey}`,
-    },
-    cache: "no-store",
-  });
-
-  if (!res.ok) return null;
-
-  const json = await res.json();
-  const first = json?.results?.[0];
-  if (!first?.urls?.regular) return null;
-
-  return {
-    url: first.urls.regular,
-    thumb: first.urls.thumb || first.urls.small || first.urls.regular,
-    source: "unsplash",
-    credit: first?.user?.name || null,
-  };
-}
-
-async function findGooglePlacePhoto(placeId) {
-  const key = process.env.GOOGLE_PLACES_API_KEY;
-  if (!key || !placeId) return null;
-
-  const detailsUrl =
-    `https://maps.googleapis.com/maps/api/place/details/json` +
-    `?place_id=${encodeURIComponent(placeId)}` +
-    `&fields=photos,name,formatted_address,url,website,geometry` +
-    `&key=${key}`;
-
-  const res = await fetch(detailsUrl, { cache: "no-store" });
-  if (!res.ok) return null;
-
-  const json = await res.json();
-  const result = json?.result;
-  const ref = result?.photos?.[0]?.photo_reference;
-  if (!ref) return null;
-
-  const photoUrl =
-    `https://maps.googleapis.com/maps/api/place/photo` +
-    `?maxwidth=1200&photo_reference=${encodeURIComponent(ref)}` +
-    `&key=${key}`;
-
-  return {
-    url: photoUrl,
-    thumb: photoUrl,
-    source: "google",
-    place: {
-      placeId,
-      name: result?.name || null,
-      address: result?.formatted_address || null,
-      mapsUrl:
-        result?.url ||
-        `https://www.google.com/maps/place/?q=place_id:${placeId}`,
-      website: result?.website || null,
-      lat: result?.geometry?.location?.lat ?? null,
-      lon: result?.geometry?.location?.lng ?? null,
-    },
-  };
-}
-
-export async function GET(request) {
+async function safeFetch(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const { searchParams } = new URL(request.url);
-    const q = searchParams.get("q") || "";
-    const placeId = searchParams.get("placeId") || "";
-    const queryKey = normalizeKey(q);
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(id);
+  }
+}
 
-    const client = await clientPromise;
-    const db = client.db();
-    const photos = db.collection("photos");
+// Use ANY key you already have configured (works locally + Vercel)
+function getGoogleKey() {
+  return (
+    process.env.GOOGLE_PLACES_API_KEY ||
+    process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY ||
+    process.env.GOOGLE_MAPS_API_KEY ||
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+    process.env.NEXT_PUBLIC_PLACES_API_KEY ||
+    ""
+  );
+}
 
-    // 1) cache by placeId first
-    if (placeId) {
-      const cachedByPlace = await photos.findOne({ placeId });
-      if (cachedByPlace?.url) {
-        return NextResponse.json({
-          ok: true,
-          images: [{ url: cachedByPlace.url, thumb: cachedByPlace.thumb || cachedByPlace.url }],
-          place: cachedByPlace.place || null,
-          source: cachedByPlace.source || null,
-          cached: true,
-        });
-      }
+function normalizeKey(s) {
+  return (s || "").toString().trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function stableHash(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h);
+}
+
+function unsplashSourceFallback(query) {
+  const q = normalizeKey(query || "travel destination");
+  const sig = stableHash(q);
+  return `https://source.unsplash.com/featured/1200x700?${encodeURIComponent(
+    query || "travel destination"
+  )}&sig=${sig}`;
+}
+
+function googlePhotoURL(photoRef, apiKey) {
+  if (!photoRef || !apiKey) return null;
+  return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1600&photoreference=${photoRef}&key=${apiKey}`;
+}
+
+async function placeDetailsByPlaceId(placeId, apiKey) {
+  if (!apiKey || !placeId) return null;
+
+  const detailURL =
+    `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(
+      placeId
+    )}` +
+    `&fields=name,geometry,formatted_address,photos,url,website` + // ✅ include website
+    `&key=${apiKey}`;
+
+  const dRes = await safeFetch(detailURL);
+  if (!dRes || !dRes.ok) return null;
+
+  const dJson = await dRes.json();
+  const r = dJson?.result;
+  if (!r) return null;
+
+  return {
+    placeId,
+    name: r.name || null,
+    address: r.formatted_address || null,
+    lat: r.geometry?.location?.lat ?? null,
+    lon: r.geometry?.location?.lng ?? null,
+    photoRef: r.photos?.[0]?.photo_reference || null,
+    mapsUrl: r.url || null,        // ✅ explicit Google Maps URL
+    website: r.website || null,    // ✅ official website
+  };
+}
+
+async function placeDetailsFromTextSearch(query, apiKey) {
+  if (!apiKey || !query) return null;
+
+  const textURL = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(
+    query
+  )}&key=${apiKey}`;
+
+  const tRes = await safeFetch(textURL);
+  if (!tRes || !tRes.ok) return null;
+
+  const tJson = await tRes.json();
+  const first = tJson?.results?.[0];
+  if (!first?.place_id) return null;
+
+  return await placeDetailsByPlaceId(first.place_id, apiKey);
+}
+
+export async function GET(req) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const q = (searchParams.get("q") || "").trim();
+    const limit = Math.max(1, Math.min(10, Number(searchParams.get("limit") || 1)));
+    const placeId = (searchParams.get("placeId") || "").trim();
+
+    const apiKey = getGoogleKey();
+
+    let place = null;
+    if (apiKey) {
+      place = placeId
+        ? await placeDetailsByPlaceId(placeId, apiKey)
+        : await placeDetailsFromTextSearch(q, apiKey);
     }
 
-    // 2) cache by query
-    if (queryKey) {
-      const cachedByQuery = await photos.findOne({ queryKey });
-      if (cachedByQuery?.url) {
-        return NextResponse.json({
-          ok: true,
-          images: [{ url: cachedByQuery.url, thumb: cachedByQuery.thumb || cachedByQuery.url }],
-          place: cachedByQuery.place || null,
-          source: cachedByQuery.source || null,
-          cached: true,
-        });
-      }
+    const images = [];
+    if (place?.photoRef && apiKey) {
+      images.push({ url: googlePhotoURL(place.photoRef, apiKey) });
     }
-
-    // 3) Unsplash first
-    if (queryKey) {
-      const unsplash = await findUnsplashImage(q);
-      if (unsplash?.url) {
-        const doc = {
-          placeId: placeId || null,
-          queryKey,
-          query: q,
-          url: unsplash.url,
-          thumb: unsplash.thumb,
-          source: "unsplash",
-          place: null,
-          createdAt: new Date(),
-        };
-
-        await photos.updateOne(
-          placeId ? { placeId } : { queryKey },
-          { $set: doc },
-          { upsert: true }
-        );
-
-        return NextResponse.json({
-          ok: true,
-          images: [{ url: unsplash.url, thumb: unsplash.thumb }],
-          place: null,
-          source: "unsplash",
-          cached: false,
-        });
-      }
-    }
-
-    // 4) Google fallback only if placeId exists
-    if (placeId) {
-      const google = await findGooglePlacePhoto(placeId);
-      if (google?.url) {
-        const doc = {
-          placeId,
-          queryKey: queryKey || null,
-          query: q || null,
-          url: google.url,
-          thumb: google.thumb,
-          source: "google",
-          place: google.place || null,
-          createdAt: new Date(),
-        };
-
-        await photos.updateOne(
-          { placeId },
-          { $set: doc },
-          { upsert: true }
-        );
-
-        return NextResponse.json({
-          ok: true,
-          images: [{ url: google.url, thumb: google.thumb }],
-          place: google.place || null,
-          source: "google",
-          cached: false,
-        });
-      }
+    while (images.length < limit) {
+      images.push({ url: unsplashSourceFallback(q || "travel destination") });
     }
 
     return NextResponse.json({
       ok: true,
-      images: [],
-      place: null,
-      source: null,
-      cached: false,
+      images: images.slice(0, limit),
+      place: place
+        ? {
+            placeId: place.placeId,
+            lat: place.lat,
+            lon: place.lon,
+            name: place.name,
+            address: place.address,
+            mapsUrl: place.mapsUrl,     // ✅ always available when Google returns it
+            website: place.website,     // ✅ official site when available
+          }
+        : null,
     });
   } catch (err) {
-    console.error("images route error:", err);
     return NextResponse.json(
-      { ok: false, error: "Failed to resolve image" },
+      { ok: false, error: err?.message || "Images lookup failed", images: [], place: null },
       { status: 500 }
     );
   }
