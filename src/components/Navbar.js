@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 export default function Navbar() {
   const [user, setUser] = useState(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false); // New state for mobile toggle
   const [authType, setAuthType] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,83 +41,151 @@ export default function Navbar() {
     } else {
       const { error: err } = await supabase.auth.signUp({ email, password });
       error = err;
-      if (!error) alert("Success! Check your email.");
     }
     setLoading(false);
     if (error) alert(error.message);
     else setShowAuthModal(false);
   };
 
-  const handleGoogleLogin = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin }
-    });
-    if (error) alert(error.message);
-  };
-
   const logout = async () => {
     await supabase.auth.signOut();
+    setIsMenuOpen(false); // Close menu on logout
     router.refresh();
   };
 
   return (
     <nav style={navStyle}>
-      {/* TRÁI: LOGO */}
+      {/* --- LEFT: LOGO --- */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Image src="/logo.png" alt="Logo" width={35} height={35} />
         <Link href="/" style={logoTextStyle}>TripPuddy</Link>
       </div>
 
-      {/* GIỮA: MENU ĐẦY ĐỦ */}
-      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+      {/* --- CENTER: DESKTOP LINKS (Hidden on Mobile) --- */}
+      <div className="hidden md:flex" style={{ alignItems: "center", gap: 25 }}>
         <Link href="/" style={navLinkStyle}>Home</Link>
         <Link href="/itinerary" style={navLinkStyle}>Build Trip</Link>
         <Link href="/my-trips" style={navLinkStyle}>My Trips</Link>
         <Link href="/chat" style={navLinkStyle}>Chat AI</Link>
         <Link href="/contact" style={navLinkStyle}>Contact</Link>
-        <Link href="/about" style={navLinkStyle}>About</Link>
       </div>
 
-      {/* PHẢI: CHUÔNG & USER */}
-      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-        <span style={{ fontSize: "24px", cursor: "pointer" }}>🔔</span>
-
+      {/* --- RIGHT: DESKTOP AUTH (Hidden on Mobile) --- */}
+      <div className="hidden md:flex" style={{ alignItems: "center", gap: 20 }}>
+        <span style={{ fontSize: "22px", cursor: "pointer", color: "white" }}>🔔</span>
         {user ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ color: "#facc15", fontWeight: "bold", fontSize: "15px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 15 }}>
+            <span style={{ color: "#facc15", fontWeight: "bold", fontSize: "14px" }}>
               {user.email.split('@')[0]}
             </span>
             <button onClick={logout} style={logoutButtonStyle}>Logout</button>
           </div>
         ) : (
-          <button onClick={() => { setAuthType('login'); setShowAuthModal(true); }} style={loginButtonStyle}>
+          <button 
+            onClick={() => { setAuthType('login'); setShowAuthModal(true); }} 
+            style={loginButtonStyle}
+          >
             Login
           </button>
         )}
       </div>
 
-      {/* MODAL (GIỮ NGUYÊN LOGIC CỦA BẠN) */}
+      {/* --- MOBILE: HAMBURGER BUTTON (Only visible on small screens) --- */}
+      {/* --- MOBILE: HAMBURGER BUTTON --- */}
+      <div className="md:hidden flex items-center">
+        <button 
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          style={{ 
+            background: "rgba(255,255,255,0.15)", 
+            border: "1px solid rgba(255,255,255,0.2)", 
+            color: "white", 
+            cursor: "pointer", 
+            padding: "6px 12px", 
+            borderRadius: "10px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px", // Space between text and icon
+            outline: "none"
+          }}
+        >
+          {/* Added MENU text */}
+          <span style={{ fontSize: "13px", fontWeight: "bold", letterSpacing: "0.5px" }}>MENU</span>
+          
+          {isMenuOpen ? (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M4 6h16M4 12h16m-7 6h7" />
+            </svg>
+          )}
+        </button>
+      </div>
+
+      {/* --- MOBILE: DROPDOWN MENU --- */}
+      {isMenuOpen && (
+        <div style={mobileMenuStyle}>
+          <Link href="/" onClick={() => setIsMenuOpen(false)} style={mobileLinkStyle}>Home</Link>
+          <Link href="/itinerary" onClick={() => setIsMenuOpen(false)} style={mobileLinkStyle}>AI Instant Ininerary</Link>
+          <Link href="/chat" onClick={() => setIsMenuOpen(false)} style={mobileLinkStyle}>AI Custom Plan</Link>
+          <Link href="/my-trips" onClick={() => setIsMenuOpen(false)} style={mobileLinkStyle}>My Trips</Link>
+          <Link href="/ai-assistant" onClick={() => setIsMenuOpen(false)} style={mobileLinkStyle}>Chat</Link>         
+          
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", width: "100%", margin: "10px 0" }} />
+          
+          {user ? (
+            <div style={{ textAlign: "center", width: "100%" }}>
+              <p style={{ color: "#facc15", marginBottom: "15px", fontWeight: "bold" }}>Hi, {user.email.split('@')[0]}</p>
+              <button onClick={logout} style={{ ...logoutButtonStyle, width: "100%", padding: "12px" }}>Logout</button>
+            </div>
+          ) : (
+            <button 
+              onClick={() => { setAuthType('login'); setShowAuthModal(true); setIsMenuOpen(false); }} 
+              style={{ ...loginButtonStyle, width: "100%", padding: "12px" }}
+            >
+              Login
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* AUTH MODAL - Keep your original modal code here */}
       {showAuthModal && (
         <div style={modalOverlay}>
           <div style={modalContent}>
-            <h2 style={{ color: '#1e3a8a', marginBottom: 20 }}>Welcome</h2>
-            <button onClick={handleGoogleLogin} style={socialButtonStyle}>
-               <img src="https://www.svgrepo.com/show/475656/google-color.svg" width="18" alt="G" />
-               Continue with Google
-            </button>
-            <div style={divider}><span>OR</span></div>
+            <h2 style={{ marginBottom: '20px', color: '#1e3a8a' }}>{authType === 'login' ? 'Welcome Back' : 'Create Account'}</h2>
             <form onSubmit={handleAuthAction}>
-              <input type="email" placeholder="Email" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <input 
+                type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} 
+                required style={inputStyle} 
+              />
               <div style={{ position: 'relative' }}>
-                <input type={showPassword ? "text" : "password"} placeholder="Password" style={inputStyle} value={password} onChange={(e) => setPassword(e.target.value)} required />
-                <span onClick={() => setShowPassword(!showPassword)} style={eyeIconStyle}>{showPassword ? "👁️" : "🙈"}</span>
+                <input 
+                  type={showPassword ? "text" : "password"} placeholder="Password" 
+                  value={password} onChange={(e) => setPassword(e.target.value)} 
+                  required style={inputStyle} 
+                />
+                <span onClick={() => setShowPassword(!showPassword)} style={eyeIconStyle}>
+                  {showPassword ? '👁️' : '🙈'}
+                </span>
               </div>
               <button type="submit" disabled={loading} style={submitButtonStyle}>
-                {loading ? '...' : (authType === 'login' ? 'Login' : 'Sign Up')}
+                {loading ? 'Processing...' : (authType === 'login' ? 'Login' : 'Sign Up')}
               </button>
             </form>
-            <button onClick={() => setShowAuthModal(false)} style={cancelButtonStyle}>Cancel</button>
+            <p style={{ marginTop: '15px', fontSize: '14px' }}>
+              {authType === 'login' ? "Don't have an account? " : "Already have an account? "}
+              <span 
+                onClick={() => setAuthType(authType === 'login' ? 'signup' : 'login')} 
+                style={{ color: '#1e3a8a', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                {authType === 'login' ? 'Sign Up' : 'Login'}
+              </span>
+            </p>
+            <button onClick={() => setShowAuthModal(false)} style={{ marginTop: '15px', background: 'none', border: 'none', color: '#666', cursor: 'pointer' }}>
+              Close
+            </button>
           </div>
         </div>
       )}
@@ -124,31 +193,88 @@ export default function Navbar() {
   );
 }
 
-// --- CSS STYLES ---
+// --- STYLES (Cleaned and Fixed for Mobile) ---
 const navStyle = {
-  background: "#1e3a8a", padding: "10px 25px", display: "flex", 
-  justifyContent: "space-between", alignItems: "center", position: "fixed", 
-  top: 0, left: 0, right: 0, zIndex: 1000, height: "65px"
+  background: "#1e3a8a",
+  padding: "0 25px",
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  position: "fixed",
+  top: 0,
+  left: 0,
+  right: 0,
+  zIndex: 3000,
+  height: "70px",
+  borderBottom: "1px solid #1d4ed8",
 };
 
-const logoTextStyle = { color: "#fff", textDecoration: "none", fontSize: 24, fontWeight: "bold" };
-const navLinkStyle = { fontSize: "15px", color: "#facc15", textDecoration: "none", fontWeight: "600" };
+const logoTextStyle = {
+  fontSize: "22px",
+  fontWeight: "bold",
+  color: "white",
+  textDecoration: "none",
+  letterSpacing: "0.5px"
+};
+
+const navLinkStyle = {
+  fontSize: "15px",
+  color: "white",
+  textDecoration: "none",
+  fontWeight: "500",
+  transition: "color 0.2s"
+};
 
 const loginButtonStyle = {
-  padding: "8px 20px", background: "linear-gradient(135deg, #14b8a6, #0ea5e9)",
-  borderRadius: "20px", fontSize: "14px", fontWeight: "bold", color: "white", border: "none", cursor: "pointer"
+  padding: "8px 22px",
+  background: "white",
+  borderRadius: "25px",
+  fontSize: "14px",
+  fontWeight: "bold",
+  color: "#1e3a8a",
+  border: "none",
+  cursor: "pointer",
+  transition: "transform 0.2s"
 };
 
 const logoutButtonStyle = {
-  padding: "6px 15px", background: "#ef4444", borderRadius: "20px", 
-  fontSize: "13px", fontWeight: "bold", color: "white", border: "none", cursor: "pointer"
+  padding: "8px 22px",
+  background: "#ef4444",
+  borderRadius: "25px",
+  fontSize: "14px",
+  fontWeight: "bold",
+  color: "white",
+  border: "none",
+  cursor: "pointer"
 };
 
-const modalOverlay = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 };
-const modalContent = { background: 'white', padding: '25px', borderRadius: '15px', width: '320px', textAlign: 'center' };
-const inputStyle = { width: '100%', padding: '10px', marginBottom: '8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' };
-const eyeIconStyle = { position: 'absolute', right: '10px', top: '8px', cursor: 'pointer' };
-const submitButtonStyle = { width: '100%', padding: '10px', borderRadius: '6px', background: '#1e3a8a', color: 'white', fontWeight: 'bold', border: 'none', cursor: "pointer" };
-const socialButtonStyle = { width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #ccc', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', marginBottom: '10px', fontWeight: '600' };
-const divider = { display: 'flex', alignItems: 'center', margin: '12px 0', color: '#999', fontSize: '11px' };
-const cancelButtonStyle = { background: 'none', border: 'none', color: '#666', marginTop: '8px', cursor: 'pointer', fontSize: '12px' };
+const mobileMenuStyle = {
+  position: "absolute",
+  top: "70px",
+  left: 0,
+  right: 0,
+  background: "#1e3a8a",
+  display: "flex",
+  flexDirection: "column",
+  padding: "25px",
+  gap: "15px",
+  borderBottom: "2px solid #1d4ed8",
+  boxShadow: "0 15px 30px rgba(0,0,0,0.4)",
+  zIndex: 2999
+};
+
+const mobileLinkStyle = { 
+  fontSize: "18px", 
+  color: "#ffffff", // Forced white for visibility
+  textDecoration: "none", 
+  fontWeight: "600", 
+  padding: "12px", 
+  textAlign: "center",
+  borderBottom: "1px solid rgba(255,255,255,0.05)"
+};
+
+const modalOverlay = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 4000 };
+const modalContent = { background: 'white', padding: '30px', borderRadius: '20px', width: '340px', textAlign: 'center', boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)" };
+const inputStyle = { width: '100%', padding: '12px', marginBottom: '10px', borderRadius: '8px', border: '1px solid #ddd', boxSizing: 'border-box', outline: "none" };
+const eyeIconStyle = { position: 'absolute', right: '12px', top: '10px', cursor: 'pointer' };
+const submitButtonStyle = { width: '100%', padding: '12px', borderRadius: '8px', background: '#1e3a8a', color: 'white', fontWeight: 'bold', border: 'none', cursor: "pointer", marginTop: "10px" };

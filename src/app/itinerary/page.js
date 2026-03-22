@@ -351,6 +351,7 @@ function mixedOptimizeActivities(activities) {
 /* ----------------------- main component ----------------------- */
 
 export default function DestinationsPage() {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const parseCost = (str) => {
     if (!str) return 0;
     const nums = (str.match(/\d+(\.\d+)?/g) || []).map(Number);
@@ -792,215 +793,146 @@ const recomputeAll = async (it) => {
       alert("Error creating PDF. Check console for details.");
     }
   };
-
-  /* ----------------------- render ----------------------- */
-
+  // --- Updated return block: Fixed Prompt Box & Added "Menu" text ---
   return (
-    <div style={{ minHeight: "100vh", background: "#f8fafc" }}>
-      {/* Banner / hero */}
-      <div
-        style={{
-          width: "100%",
-          height: 140,
-          overflow: "hidden",
-          position: "relative",
-          marginTop: "-2px",
-        }}
-      >
+    <div style={{ minHeight: "100vh", background: "#f8fafc", position: "relative" }}>
+      
+      {/* 1. NAVBAR - This part is usually in layout.js, but if you put it here, keep it clean */}
+      {/* (Note: If your Navbar.js is already working, you can remove this <nav> block) */}
+
+      {/* 2. HERO BANNER */}
+      <div style={{ width: "100%", height: 160, overflow: "hidden", position: "relative" }}>
         <img
           src="/banner.jpg"
           alt="Banner"
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            filter: "brightness(0.92) saturate(1.1)",
-          }}
+          style={{ width: "100%", height: "100%", objectFit: "cover", filter: "brightness(0.7)" }}
         />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(to bottom, rgba(0,0,0,.25), rgba(0,0,0,0))",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            bottom: 18,
-            left: "50%",
-            transform: "translateX(-50%)",
-            color: "#fff",
-            fontWeight: 700,
-            fontSize: 24,
-            textShadow: "0 3px 8px rgba(0,0,0,.35)",
-          }}
-        >
-          Your TripPuddy Itinerary Planner 🗺️
+        <div style={{ position: "absolute", bottom: 35, left: "50%", transform: "translateX(-50%)", color: "#ffffff", fontWeight: 800, fontSize: "1.6rem", textAlign: "center", width: "90%", textShadow: "2px 2px 10px rgba(0,0,0,0.8)" }}>
+          Your Itinerary Planner 🗺️
         </div>
       </div>
 
-      <div style={{ maxWidth: 1120, margin: "20px auto", padding: "0 16px" }}>
-        {/* Query box */}
+      {/* 3. MAIN CONTENT AREA */}
+      <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 16px", position: "relative", zIndex: 10 }}>
+        
+        {/* PROMPT BOX - RE-ADDED HERE */}
         <div
           style={{
             background: "#ffffff",
-            borderRadius: 14,
-            boxShadow: "0 3px 10px rgba(0,0,0,.08)",
-            padding: 16,
-            marginTop: 24,
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
+            borderRadius: 16,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
+            padding: 20,
+            marginTop: -35, // Floats the box over the banner
             border: "1px solid #e2e8f0",
+            display: "flex",
+            flexDirection: "column", // Stack on mobile
+            gap: 12
           }}
+          className="md:flex-row" // Side-by-side on desktop
         >
           <input
             ref={inputRef}
-            placeholder="Describe your trip... e.g. 3 days Singapore food + culture, mid budget"
+            placeholder="Where to? (e.g. 3 days in Sapa food tour)"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && generate()}
             style={{
               flex: 1,
-              padding: "14px 16px",
+              padding: "16px 20px",
               borderRadius: 12,
-              border: "1px solid #d1d5db",
+              border: "1px solid #cbd5e1",
               outline: "none",
-              fontSize: "1.05rem",
+              fontSize: "1rem",
+              color: "#1e293b"
             }}
           />
-
           <button
             disabled={loading}
             onClick={generate}
             style={{
-              background: "#0d9488",
-              color: "#fff",
-              padding: "14px 22px",
-              borderRadius: 12,
-              fontWeight: 700,
+              backgroundColor: "#0d9488",
+              color: "#ffffff",
+              fontWeight: "bold",
+              padding: "16px 30px",
+              borderRadius: "12px",
               border: "none",
+              cursor: loading ? "not-allowed" : "pointer",
               fontSize: "1rem",
-              minWidth: 130,
+              transition: "all 0.2s"
             }}
           >
-            {loading ? "Generating…" : "Generate"}
+            {loading ? "Generating..." : "Generate Plan"}
           </button>
         </div>
 
-        {/* Day header & controls */}
+        {/* 4. ITINERARY RESULTS */}
         {data.itinerary?.length > 0 && (
-          <DayHeaderControls
-            itinerary={data.itinerary}
-            activeDay={activeDay}
-            setActiveDay={(i) => {
-              setActiveDay(i);
-              setShowRouteMap(false);
-            }}
-            daySummary={daySummary}
-            optimizeActiveDay={optimizeActiveDay}
-            optimizeLabel={optimizeLabel}
-            showOptimizeRecommend={showOptimizeRecommend}
-            showRouteMap={showRouteMap}
-            toggleRouteMap={() => setShowRouteMap((v) => !v)}
-            exportCSV={exportCSV}
-            exportPdf={exportPdf}
-          />
-        )}
+          <div style={{ marginTop: 30 }}>
+            <DayHeaderControls
+              itinerary={data.itinerary}
+              activeDay={activeDay}
+              setActiveDay={(i) => {
+                setActiveDay(i);
+                setShowRouteMap(false);
+              }}
+              daySummary={daySummary(activeDay)}
+              optimizeActiveDay={optimizeActiveDay}
+              optimizeLabel={optimizeLabel}
+              showOptimizeRecommend={showOptimizeRecommend}
+              showRouteMap={showRouteMap}
+              toggleRouteMap={() => setShowRouteMap((v) => !v)}
+              exportCSV={exportCSV}
+              exportPdf={exportPdf}
+            />
 
-        {/* Itinerary list (DnD) */}
-        {data.itinerary?.[activeDay] && (
-          <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={itemsForDay} strategy={verticalListSortingStrategy}>
-              <ul
-                style={{
-                  listStyle: "none",
-                  margin: 0,
-                  padding: 0,
-                  marginTop: 12,
-                }}
-              >
-                {data.itinerary[activeDay].activities?.map((act, i) => {
-                  const loc =
-                    typeof act.location === "object" && act.location !== null
-                      ? act.location
-                      : { name: String(act.location || ""), city: "", country: "" };
+            {data.itinerary?.[activeDay] && (
+              <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={itemsForDay} strategy={verticalListSortingStrategy}>
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0, marginTop: 15 }}>
+                    {data.itinerary[activeDay].activities?.map((act, i) => {
+                      const loc = typeof act.location === "object" && act.location !== null
+                        ? act.location
+                        : { name: String(act.location || ""), city: "", country: "" };
+                      
+                      const c = act.coordinates;
+                      const prevC = data.itinerary[activeDay].activities?.[i - 1]?.coordinates;
+                      const mode = prevC && c ? modeFor(distKm(prevC, c)) : undefined;
 
-                  const c = act.coordinates;
-                  const prevC =
-                    data.itinerary[activeDay].activities?.[i - 1]?.coordinates;
+                      return (
+                        <li key={`act-${act.id || i}`} style={{ marginBottom: 20 }}>
+                          <SortableActivity id={`act-${i}`}>
+                            <ActivityCard
+                              act={act}
+                              loc={loc}
+                              mode={mode}
+                              coordinates={c}
+                              LeafletMap={LeafletMap}
+                              userLocation={userLocation}
+                              iconFor={iconFor}
+                              setPopupImage={setPopupImage}
+                            />
+                          </SortableActivity>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </SortableContext>
+              </DndContext>
+            )}
 
-                  const mode = prevC && c ? modeFor(distKm(prevC, c)) : undefined;
-
-                  const daySegments = routesByDay[activeDay]?.segments || [];
-                  const singleSeg = segmentForIndex(daySegments, i);
-
-                  let travelLabel = act.travelTime;
-                  let travelMode = mode;
-
-                  if (!travelLabel && prevC && c) {
-                    const d = distKm(prevC, c);
-                    travelMode = modeFor(d);
-                    const mins = fallbackMinutes(d, travelMode);
-                    travelLabel = minutesToStr(mins, travelMode);
-                  }
-
-                  return (
-                    <li key={`act-${i}`} style={{ marginBottom: 18 }}>
-                      {i > 0 && travelLabel && (
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                            margin: "0 0 10px 6px",
-                            color: "#374151",
-                            fontSize: 14,
-                          }}
-                        >
-                          <span style={{ fontSize: 16 }}>{iconFor(travelMode)}</span>
-                          <span style={{ fontWeight: 600 }}>Travel:</span>
-                          <span>{travelLabel}</span>
-                        </div>
-                      )}
-
-                      <SortableActivity id={`act-${i}`}>
-                        <ActivityCard
-                          act={act}
-                          loc={loc}
-                          mode={mode}
-                          coordinates={c}
-                          singleSeg={singleSeg}
-                          LeafletMap={LeafletMap}
-                          userLocation={userLocation}
-                          iconFor={iconFor}
-                          setPopupImage={setPopupImage}
-                        />
-                      </SortableActivity>
-                    </li>
-                  );
-                })}
-              </ul>
-            </SortableContext>
-          </DndContext>
-        )}
-
-        {/* Full-day route map */}
-        {showRouteMap && data.itinerary?.[activeDay] && (
-          <FullDayRouteMap
-            dayIndex={activeDay}
-            itinerary={data.itinerary}
-            routesByDay={routesByDay}
-            fullDayBounds={fullDayBounds}
-            LeafletMap={LeafletMap}
-            userLocation={userLocation}
-          />
+            {showRouteMap && (
+              <FullDayRouteMap
+                dayIndex={activeDay}
+                itinerary={data.itinerary}
+                routesByDay={routesByDay}
+                LeafletMap={LeafletMap}
+                userLocation={userLocation}
+              />
+            )}
+          </div>
         )}
       </div>
 
-      {/* global image popup */}
       <PhotoModal image={popupImage} onClose={() => setPopupImage(null)} />
     </div>
   );
