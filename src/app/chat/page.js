@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import TinderCard from "react-tinder-card";
 import { FaHeart, FaTimes } from "react-icons/fa";
+import Navbar from "@/components/Navbar";
 
 export default function ChatPage() {
   const [db, setDb] = useState([]);
@@ -11,149 +12,130 @@ export default function ChatPage() {
   ]);
   const [loading, setLoading] = useState(false);
   const [likedPlaces, setLikedPlaces] = useState([]);
-  
-  // Biến này để AI không bị nhầm Ninh Thuận sang Darwin
-  const [lastSearchCity, setLastSearchCity] = useState("");
 
-  const handleSend = async (forcedText) => {
-    const userMsg = forcedText || input.trim();
-    if (!userMsg || loading) return;
+  const handleSend = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
 
     setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
-    setLastSearchCity(userMsg); // Lưu lại tên thành phố khách vừa gõ
     setInput("");
 
     try {
+      // Logic: MongoDB -> Unsplash -> Google Places (Handled in your API route)
       const res = await fetch(`/api/google-proxy?input=${encodeURIComponent(userMsg)}`);
-      const googleData = await res.json();
+      const data = await res.json();
       
-      if (googleData.results && googleData.results.length > 0) {
-        const googleKey = process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY;
-        const cards = await Promise.all(googleData.results.slice(0, 8).map(async (place) => {
-          let finalDescription = place.description;
-          if (!finalDescription || finalDescription === "A great place to explore!") {
-            try {
-              const aiRes = await fetch("/api/ai-tip", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ placeName: place.name, location: userMsg, types: place.types || [] })
-              });
-              if (aiRes.ok) {
-                const aiData = await aiRes.json();
-                finalDescription = aiData.tip;
-              }
-            } catch (e) {
-              finalDescription = `Boss, ${place.name} is a fantastic spot in ${userMsg}!`;
-            }
-          }
-          return {
-            id: place.place_id,
-            name: place.name,
-            rating: place.rating,
-            description: finalDescription,
-            image: place.photos 
-              ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${place.photos[0].photo_reference}&key=${googleKey}`
-              : "https://via.placeholder.com/400"
-          };
-        }));
-        setDb(cards.reverse());
-        setMessages((prev) => [...prev, { role: "ai", content: `Here're a few places in ${userMsg}, which one do you want to visit?` }]);
+      if (data.results && data.results.length > 0) {
+        setDb(data.results.reverse());
+        setMessages((prev) => [...prev, { role: "ai", content: `Found some spots in ${userMsg}!` }]);
       } else {
-        setMessages((prev) => [...prev, { role: "ai", content: "I couldn't find anything there. Try another city?" }]);
+        setMessages((prev) => [...prev, { role: "ai", content: "No places found. Try another city?" }]);
       }
     } catch (e) {
       setMessages((prev) => [...prev, { role: "ai", content: "Connection error!" }]);
-    } finally { setLoading(false); }
-  };
-
-  // --- HÀM ON SWIPE QUAN TRỌNG (SỬA LỖI REFERENCE ERROR) ---
-  const onSwipe = (direction, item) => {
-    if (direction === 'right') {
-      setLikedPlaces((prev) => [...prev, item]);
+    } finally { 
+      setLoading(false); 
     }
-    setDb((prev) => prev.filter(v => v.id !== item.id));
   };
 
-  // Logic tạo Itinerary gửi kèm Context Thành phố
-  const makeItinerary = () => {
-    if (likedPlaces.length === 0) return;
-    
-    // Ép AI phải hiểu đây là địa điểm ở tỉnh nào để không nhầm sang Darwin
-    const placeNamesWithCity = likedPlaces.map(p => `${p.name} in ${lastSearchCity}`).join(", ");
-    
-    localStorage.setItem("selectedPlacesForItinerary", placeNamesWithCity);
-    
-    setMessages(prev => [...prev, { role: "ai", content: `Got it Boss! Redirecting you to Build Trip for ${lastSearchCity}...` }]);
-    
-    setTimeout(() => {
-      window.location.href = "/itinerary";
-    }, 1500);
+  const onSwipe = (direction, item) => {
+    if (direction === 'right') setLikedPlaces((prev) => [...prev, item]);
+    // Use the same unique ID logic to filter out the card
+    setDb((prev) => prev.filter(v => v.place_id !== item.place_id));
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', backgroundColor: '#f8fafc', overflow: 'hidden' }}>
-      <header style={{ backgroundColor: '#1e3a8a', padding: '15px 0', display: 'flex', justifyContent: 'center', gap: '20px', flexShrink: 0, zIndex: 10 }}>
-        {['Home', 'Build Trip', 'My Trips', 'Chat AI'].map(item => (
-          <span key={item} style={{ color: '#fbbf24', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' }}>{item}</span>
-        ))}
-      </header>
+    <div style={{ 
+      display: 'flex', flexDirection: 'column', height: '100dvh', 
+      backgroundColor: '#ecfeff', // Even lighter Cyan (Cyan 50)
+      overflow: 'hidden' 
+    }}>
+      <Navbar />
 
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '10px', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'relative', width: '320px', height: '360px', flexShrink: 0 }}>
+      <main style={{ 
+        flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', 
+        justifyContent: 'center', position: 'relative', pointerEvents: 'none' 
+      }}>
+        <div style={{ position: 'relative', width: '340px', height: '500px', pointerEvents: 'auto' }}>
           {db.length > 0 ? (
             db.map((item, index) => (
-              <div key={item.id} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: index }}>
-                <TinderCard onSwipe={(dir) => onSwipe(dir, item)} preventSwipe={["up", "down"]}>
-                  <div style={{ backgroundColor: 'white', width: '320px', height: '340px', borderRadius: '25px', overflow: 'hidden', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', position: 'relative', border: '2px solid #eee' }}>
-                    <img src={item.image} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />
-                    <div style={{ position: 'absolute', bottom: 0, width: '100%', padding: '20px 15px 60px', background: 'linear-gradient(transparent, rgba(0,0,0,0.9))', color: 'white' }}>
-                      <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 'bold' }}>{item.name}</h2>
-                      <p style={{ margin: '8px 0 0', fontSize: '12px', lineHeight: '1.4', color: '#e2e8f0', fontStyle: 'italic' }}>"{item.description}"</p>
-                    </div>
-                    <div style={{ position: 'absolute', bottom: '15px', width: '100%', display: 'flex', justifyContent: 'center', gap: '40px' }}>
-                       {/* NÚT BẤM GỌI HÀM ONSWIPE */}
-                       <button onClick={() => onSwipe('left', item)} style={{ width: '40px', height: '40px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaTimes /></button>
-                       <button onClick={() => onSwipe('right', item)} style={{ width: '40px', height: '40px', borderRadius: '50%', border: 'none', backgroundColor: 'white', color: '#22c55e', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FaHeart /></button>
-                    </div>
+              /* FIX: Added index to key to ensure uniqueness */
+              <TinderCard 
+                key={`${item.place_id}-${index}`} 
+                onSwipe={(dir) => onSwipe(dir, item)} 
+                preventSwipe={["up", "down"]}
+              >
+                <div style={{ 
+                  backgroundColor: 'white', height: '480px', borderRadius: '30px', 
+                  overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.1)', position: 'relative' 
+                }}>
+                  <img 
+                    src={item.image} 
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                    alt={item.name} 
+                    /* Fallback to Unsplash if image fails to load */
+                    onError={(e) => { e.target.src = `https://source.unsplash.com/800x1000/?${encodeURIComponent(item.name)}`; }}
+                  />
+                  
+                  <div style={{ 
+                    position: 'absolute', inset: 0, 
+                    background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 60%)',
+                    display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', 
+                    padding: '20px 20px 100px' 
+                  }}>
+                    <h2 style={{ color: 'white', fontSize: '22px', fontWeight: 'bold' }}>{item.name}</h2>
+                    <p style={{ color: '#cbd5e1', fontSize: '13px' }}>{item.address}</p>
                   </div>
-                </TinderCard>
-              </div>
+
+                  <div style={{ 
+                    position: 'absolute', bottom: '30px', left: '0', right: '0', 
+                    display: 'flex', justifyContent: 'center', gap: '40px', zIndex: 50 
+                  }}>
+                    <button onClick={(e) => { e.stopPropagation(); onSwipe('left', item); }} style={circleBtnStyle("#fee2e2", "#ef4444")}><FaTimes /></button>
+                    <button onClick={(e) => { e.stopPropagation(); onSwipe('right', item); }} style={circleBtnStyle("#d1fae5", "#10b981")}><FaHeart /></button>
+                  </div>
+                </div>
+              </TinderCard>
             ))
           ) : (
-            <div style={{ width: '300px', height: '320px', borderRadius: '25px', border: '2px dashed #ccc', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', textAlign: 'center', padding: '20px' }}>
-              {likedPlaces.length > 0 ? "Ready to build your trip?" : "Ask for a city to start!"}
+            <div style={{ 
+              color: '#164e63', textAlign: 'center', padding: '30px', 
+              background: 'rgba(255,255,255,0.4)', borderRadius: '30px', backdropFilter: 'blur(10px)' 
+            }}>
+               <p style={{ fontWeight: 'bold' }}>{likedPlaces.length > 0 ? `Selected ${likedPlaces.length} places!` : "Enter a city to explore!"}</p>
             </div>
           )}
         </div>
-
-        <div style={{ width: '100%', maxWidth: '600px', backgroundColor: 'white', borderRadius: '30px 30px 0 0', flex: 1, display: 'flex', flexDirection: 'column', padding: '15px', boxShadow: '0 -5px 20px rgba(0,0,0,0.05)', marginTop: '10px', overflow: 'hidden' }}>
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '10px' }}>
-            {messages.map((m, i) => (
-              <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', backgroundColor: m.role === 'user' ? '#2563eb' : '#f1f5f9', color: m.role === 'user' ? 'white' : '#1e293b', padding: '12px 18px', borderRadius: '20px', maxWidth: '85%', fontSize: '15px' }}>
-                {m.content}
-              </div>
-            ))}
-            
-            {likedPlaces.length > 0 && db.length === 0 && !loading && (
-              <div style={{ alignSelf: 'center', marginTop: '10px' }}>
-                <button 
-                  onClick={makeItinerary}
-                  style={{ backgroundColor: '#fbbf24', color: '#1e3a8a', border: 'none', padding: '12px 25px', borderRadius: '25px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                >
-                  Make your own itinerary ({likedPlaces.length})
-                </button>
-              </div>
-            )}
-            {loading && <div style={{ alignSelf: 'flex-start', color: '#94a3b8', fontSize: '13px' }}>Processing...</div>}
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: '30px', padding: '6px 15px', border: '1px solid #e2e8f0' }}>
-            <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} placeholder="Ask TripPuddy..." style={{ flex: 1, border: 'none', outline: 'none', background: 'none', padding: '10px' }} />
-            <button onClick={() => handleSend()} style={{ backgroundColor: '#2563eb', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '20px', fontWeight: 'bold' }}>Send</button>
-          </div>
-        </div>
       </main>
+
+      {/* Input Bar */}
+      <div style={{ 
+        position: 'absolute', bottom: '30px', left: '50%', transform: 'translateX(-50%)', 
+        zIndex: 100, width: 'min(500px, 92%)', pointerEvents: 'auto' 
+      }}>
+        <div style={{ 
+          display: 'flex', background: 'white', borderRadius: '30px', padding: '8px 15px', 
+          boxShadow: '0 10px 30px rgba(0,0,0,0.1)', border: '1px solid #cffafe' 
+        }}>
+          <input 
+            value={input} 
+            onChange={(e) => setInput(e.target.value)} 
+            onKeyDown={(e) => e.key === 'Enter' && handleSend()} 
+            placeholder="Search city..." 
+            style={{ flex: 1, border: 'none', outline: 'none', padding: '10px' }} 
+          />
+          <button onClick={() => handleSend()} style={{ background: "#06b6d4", color: "white", border: "none", padding: "10px 25px", borderRadius: "20px", fontWeight: "bold" }}>
+            Send
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
+
+const circleBtnStyle = (bg, color) => ({
+  width: "60px", height: "60px", borderRadius: "50%", backgroundColor: bg, color: color,
+  display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px",
+  border: "none", cursor: "pointer", boxShadow: "0 6px 12px rgba(0,0,0,0.1)", pointerEvents: "auto"
+});
